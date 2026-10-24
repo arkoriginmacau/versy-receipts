@@ -39,6 +39,9 @@
       const id = window.__VERSY_RECEIPT_ID;
       const i = list.findIndex(x => x && x.id === id);
       const row = Object.assign({ id, updatedAt: Date.now(), kind: window.__VERSY_RECEIPT_KIND||'regular' }, meta||{});
+      if(row.receiptNo!=null&&typeof row.receiptNo==='object') row.receiptNo = String(row.receiptNo.current||row.receiptNo.no||row.receiptNo.receiptNo||'');
+      else if(row.receiptNo!=null) row.receiptNo = String(row.receiptNo);
+      if(row.title!=null&&typeof row.title==='object') row.title = String(row.title.en||row.title.title||'Untitled receipt');
       if(i >= 0) list[i] = Object.assign({}, list[i], row);
       else list.unshift(row);
       list.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
@@ -1496,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.25 · 26.10.24';
+const VERSION='v0.26 · 26.10.24';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1569,7 +1572,7 @@ let lang='both';try{lang=localStorage.getItem('arkorigin-lang')||'both';}catch(e
 let cur=null,dirty=false;
 
 function load(){try{const raw=localStorage.getItem(KEY);if(raw){const s=JSON.parse(raw);if(s&&Array.isArray(s.blocks)&&s.rev>(seed.rev||0))return s;}}catch(e){}return clone(seed);}
-function save(quiet){state.rev=Date.now();if(!quiet)dirty=true;try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}updStatus();try{const b=(state.blocks&&state.blocks[0])||{};let title='';try{title=(firstVal('buyerName')||firstVal('title')||b.en||'').toString().slice(0,80);}catch(e){title=(b.en||'').toString().slice(0,80);}const no=((state.receipt&&state.receipt.current)||'').toString();const kind=receiptKind();window.__VERSY_RECEIPT_KIND=kind;window.__versyUpsertIndex&&window.__versyUpsertIndex({title:title||(kind==='paid-in-full'?'Paid in full':'Untitled receipt'),receiptNo:no,mode:state.ab||'',kind:kind});}catch(_e){}}
+function save(quiet){state.rev=Date.now();if(!quiet)dirty=true;try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}updStatus();try{const b=(state.blocks&&state.blocks[0])||{};let title='';try{title=(firstVal('buyerName')||firstVal('title')||b.en||'').toString().slice(0,80);}catch(e){title=(b.en||'').toString().slice(0,80);}const no=receiptNoStr(state.receipt&&state.receipt.current);const kind=receiptKind();window.__VERSY_RECEIPT_KIND=kind;window.__versyUpsertIndex&&window.__versyUpsertIndex({title:title||(kind==='paid-in-full'?'Paid in full':'Untitled receipt'),receiptNo:no,mode:state.ab||'',kind:kind});}catch(_e){}}
 let saveT;const saveLater=()=>{clearTimeout(saveT);saveT=setTimeout(save,250);};
 
 /* ---------- path helpers (in-place editing binds text to model paths) ---------- */
@@ -1807,6 +1810,11 @@ function isPaidKind(){
  return k==='paid-in-full';
 }
 function receiptKind(){return isPaidKind()?'paid-in-full':'regular';}
+function receiptNoStr(v){
+ if(v==null||v==='')return '';
+ if(typeof v==='object')return String(v.current||v.no||v.receiptNo||v.number||'');
+ return String(v);
+}
 function applyPaidKindDefaults(){
  if(!isPaidKind())return;
  state.kind='paid-in-full';
@@ -2099,7 +2107,7 @@ function openSiblingReceipt(opts){
  try{
   const INDEX_KEY=window.__VERSY_INDEX_KEY||'versy-receipts-index-v1';
   let list=JSON.parse(localStorage.getItem(INDEX_KEY)||'[]');if(!Array.isArray(list))list=[];
-  list.unshift({id:nid,updatedAt:Date.now(),title:title||(wantKind==='paid-in-full'?'Paid in full':'Receipt'),receiptNo:copy.receipt.current||'',kind:wantKind,mode:''});
+  list.unshift({id:nid,updatedAt:Date.now(),title:title||(wantKind==='paid-in-full'?'Paid in full':'Receipt'),receiptNo:receiptNoStr(copy.receipt&&copy.receipt.current),kind:wantKind,mode:''});
   list=list.slice(0,50);localStorage.setItem(INDEX_KEY,JSON.stringify(list));
  }catch(e){}
  let url='receipt.html?id='+encodeURIComponent(nid)+'&view='+encodeURIComponent(wantView);
