@@ -1,0 +1,14 @@
+# Versy receipts Storage API — Cloudflare Worker + R2
+name = "versy-receipts"
+main = "worker.js"
+compatibility_date = "2026-10-24"
+workers_dev = true
+account_id = "a4e86fb12c365f27eff0fbf2ca98eb5b"
+
+[[r2_buckets]]
+binding = "RECEIPTS"
+bucket_name = "versy-receipts"
+
+[vars]
+# Comma-separated origins allowed for browser calls (* = any; keep tight in prod if desired)
+ALLOWED_ORIGIN = "https://arkoriginmacau.github.io,http://localhost:3000,http://127.0.0.1:3000"

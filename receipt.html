@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.35 · 26.10.24';
+const VERSION='v0.36 · 26.10.24';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1940,8 +1940,8 @@ function apiBase(){
  if(window.__VERSY_API_BASE)return String(window.__VERSY_API_BASE).replace(/\/$/,'');
  try{const u=localStorage.getItem('versy-upload-api');if(u)return String(u).replace(/\/api\/upload-receipt\/?$/,'');}catch(e){}
  if(window.__VERSY_UPLOAD_API)return String(window.__VERSY_UPLOAD_API).replace(/\/api\/upload-receipt\/?$/,'');
- if(/\.github\.io$/i.test(location.hostname))return '';
- return '';
+ /* Default: Cloudflare Worker + R2 (prefer over Vercel Blob). Override with localStorage versy-api-base. */
+ return 'https://versy-receipts.arkoriginmacau.workers.dev';
 }
 function uploadApiUrl(){
  const b=apiBase();
@@ -2115,7 +2115,7 @@ function localFilesFor(receiptNo){
  return dedupeFilesByFormat(readLocalStore().files.filter(f=>String(f.receiptNo||'').toLowerCase()===want));
 }
 function storageMode(){
- return uploadApiUrl()?'blob':'local';
+ return uploadApiUrl()?'cloud':'local';
 }
 function storeReceiptPdf(blob, opts){
  opts=opts||{};
@@ -2142,7 +2142,7 @@ function storeReceiptPdf(blob, opts){
   pdfToast('Saving in this browser…',null);
   return finishLocal().catch(function(err){pdfToast(String(err&&err.message||err),false);return null;});
  }
- pdfToast('Storing on Blob…',null);
+ pdfToast('Storing on Cloudflare…',null);
  return blobToBase64(pdfBlob).then(function(pdfBase64){
   return fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({receiptNo:receiptNo,kind:kind,view:view,filename:filename,pdfBase64:pdfBase64})});
  }).then(async function(r){
@@ -2150,11 +2150,11 @@ function storeReceiptPdf(blob, opts){
   if(!r.ok)throw new Error((j&&j.error)||('HTTP '+r.status));
   /* also mirror metadata+blob locally so Storage list works offline */
   try{await idbPutPdf(pathname, pdfBlob);localStorePut({receiptNo:receiptNo,kind:kind,view:view,filename:filename,pathname:pathname,url:(j&&j.url)||('idb:'+pathname),uploadedAt:Date.now(),local:false,size:pdfBlob.size||0});}catch(e){}
-  pdfToast('Stored on Blob · '+receiptNo,true);
+  pdfToast('Stored on Cloudflare · '+receiptNo,true);
   return j||{ok:true,pathname:pathname,receiptNo:receiptNo,kind:kind,view:view};
  }).catch(function(err){
-  console.warn('Blob store failed, falling back to local',err);
-  pdfToast('Blob failed — saving locally…',null);
+  console.warn('Cloud store failed, falling back to local',err);
+  pdfToast('Cloud failed — saving locally…',null);
   return finishLocal();
  });
 }

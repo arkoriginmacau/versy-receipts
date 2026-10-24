@@ -6,38 +6,64 @@ Hosted **Artwork Purchase Receipt** (Versy / paperworks) for Ark’s Coffee Shop
 
 - GitHub Pages (static): https://arkoriginmacau.github.io/versy-receipts/
 - Editor: https://arkoriginmacau.github.io/versy-receipts/receipt.html
+- Storage API (Cloudflare Worker + R2): https://versy-receipts.arkoriginmacau.workers.dev
 - Coffee Shop tile: **Versy receipts** (Paperworks)
 
-## Features (v0.35)
+## Features (v0.36)
 
 - **Regular** purchase receipt (A/B finished vs custom, bilingual, one-page view)
-- **Paid in full / 已全額支付** — same wrapper/layout/ends; settlement body (final payment, deposits hidden); Gallery sold red `#a53a2a`
-- **Default merchant signature** on every kind (full, one-page, paid-in-full). Placeholder script signature until you upload your own (⋯ → Default signature, or ✎ on the sign line). Stored in `localStorage` key `versy-merchant-sig`
-- **Save PDF** via html2pdf from jsDelivr CDN (not inlined)
-- **Storage drag & drop** — drop a PDF or drag the current receipt onto the Storage drop zone; lands under `receipts/{no}/…` on Blob
-- **Same-serial siblings** — from Storage: **＋ Full**, **＋ One-page**, **＋ Paid in full** copy all details and keep the same receipt number
-- **Storage tab** — browse archived PDFs by receipt number (full / one-page / paid-in-full share one folder). Opens from top-bar **Storage** or hub link
+- **Paid in full / 已全額支付** — same wrapper/layout/ends; settlement body; Gallery sold red `#a53a2a`
+- **Default merchant signature** on every kind (⋯ → Default signature). Stored in `localStorage` key `versy-merchant-sig`
+- **Save PDF** via html2pdf from jsDelivr CDN
+- **Storage** — drop a PDF or store the current receipt; one line per receipt number; click to expand files
+- **Pay in full · split** — from a Storage row, auto-adds a stamped Paid-in-full PDF under the same number
+- **Cloud archive** on **Cloudflare R2** (Worker API). IndexedDB stays as offline fallback when cloud fails
 
-## Vercel Blob archive
+## Cloudflare R2 archive
 
-Save PDF still downloads locally, then best-effort uploads to Vercel Blob:
+UI defaults to the Worker at `https://versy-receipts.arkoriginmacau.workers.dev`.
 
-`receipts/{receiptNo}/{full|one-page}-{regular|paid-in-full}.pdf` (one per number+format; overwrite)
+Object keys:
 
-### Setup
+`receipts/{receiptNo}/{Full-receipt|One-page-receipt|Paid-in-full}-{receiptNo}.pdf`
 
-1. Import this GitHub repo into a Vercel project (or `vercel link`).
-2. Vercel → Storage → Create Blob store → connect to the project (sets `BLOB_READ_WRITE_TOKEN`).
-3. Deploy. API routes: `/api/upload-receipt`, `/api/list-receipts`.
-4. If the UI is still on GitHub Pages, point it at the Vercel origin once in the browser console:
+(one file per number+format; overwrite)
+
+### API
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/health` | Worker + R2 binding check |
+| `POST` | `/api/upload-receipt` | JSON `{ receiptNo, kind, view, pdfBase64 }` |
+| `GET` | `/api/list-receipts` | Folders (or `?no=` for files) |
+| `GET` | `/api/file?key=…` | Serve a PDF (inline) |
+
+CORS allows `https://arkoriginmacau.github.io` (and localhost). Override the API base anytime:
 
 ```js
-localStorage.setItem('versy-api-base', 'https://YOUR-VERCEL-APP.vercel.app')
+localStorage.setItem('versy-api-base', 'https://versy-receipts.arkoriginmacau.workers.dev')
+// or clear to use the built-in default:
+localStorage.removeItem('versy-api-base')
 ```
 
-Do **not** commit secrets. GitHub Pages keeps serving static HTML without the API.
+### Deploy Worker (from `worker/`)
+
+Needs a Cloudflare API token with **Workers Scripts Edit** and **Workers R2 Storage Edit** (plus Account read), and `CLOUDFLARE_ACCOUNT_ID=a4e86fb12c365f27eff0fbf2ca98eb5b`:
+
+```bash
+cd worker
+npx wrangler r2 bucket create versy-receipts   # once
+npx wrangler deploy
+curl -s https://versy-receipts.arkoriginmacau.workers.dev/api/health
+```
+
+Do **not** commit secrets. GitHub Pages keeps serving static HTML; the Worker holds the PDFs.
+
+### Legacy Vercel Blob
+
+`api/upload-receipt.js` and `api/list-receipts.js` remain for an optional Vercel deploy. Prefer the Cloudflare Worker going forward.
 
 ## Local / host notes
 
-- Template version shown in the top bar (`v0.35 · 26.10.24`)
-- Host shell `0.2` — per-id localStorage + index; `?kind=paid-in-full` for settlement receipts
+- Template version shown in the top bar (`v0.36 · 26.10.24`)
+- Host shell — per-id localStorage + index; `?kind=paid-in-full` for settlement receipts
