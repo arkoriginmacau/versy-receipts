@@ -8,7 +8,7 @@ Hosted **Artwork Purchase Receipt** (Versy / paperworks) for Ark’s Coffee Shop
 - Editor: https://arkoriginmacau.github.io/versy-receipts/receipt.html
 - Coffee Shop tile: **Versy receipts** (Paperworks)
 
-## Features (v0.22)
+## Features (v0.23)
 
 - **Regular** purchase receipt (A/B finished vs custom, bilingual, one-page view)
 - **Paid in full / 已全額支付** — same wrapper/layout/ends; settlement body (final payment, deposits hidden); Gallery sold red `#a53a2a`
@@ -39,5 +39,5 @@ Do **not** commit secrets. GitHub Pages keeps serving static HTML without the AP
 
 ## Local / host notes
 
-- Template version shown in the top bar (`v0.22 · 26.10.24`)
+- Template version shown in the top bar (`v0.23 · 26.10.24`)
 - Host shell `0.2` — per-id localStorage + index; `?kind=paid-in-full` for settlement receipts
