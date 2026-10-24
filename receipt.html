@@ -1496,7 +1496,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.23 · 26.10.24';
+const VERSION='v0.24 · 26.10.24';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -2202,111 +2202,101 @@ function storageTab(){
  const curNo=(state.receipt&&state.receipt.current)||'';
  const mode=storageMode();
  openDlg('Storage 存檔',()=>{
-  const wrap=h('div',{id:'storWrap',style:'display:grid;gap:10px;min-height:180px'});
-  wrap.append(h('p',{class:'hint'},'Drop a PDF or drag this receipt into the red-dashed box. Same receipt number → same folder. Full / one-page / paid-in-full stay together.'));
+  const wrap=h('div',{id:'storWrap',style:'display:grid;gap:12px;min-height:160px'});
+  wrap.append(h('p',{class:'hint'},'Drop a receipt PDF here. Files are grouped by receipt number — click a number to see its files.'));
 
-  const status=h('div',{id:'storStatus',class:'stor-status',style:'font-size:12px;padding:8px 10px;border-radius:8px;background:'+(mode==='blob'?'#e8f5e9':'#fff3e0')+';border:1px solid '+(mode==='blob'?'#a5d6a7':'#ffcc80')},
-   mode==='blob'
-    ? 'Mode: Vercel Blob (versy-api-base set)'
-    : 'Mode: local browser store — drops still work. For cloud Blob: localStorage.setItem("versy-api-base","https://YOUR.vercel.app")');
+  if(mode!=='blob'){
+   wrap.append(h('p',{class:'stor-quiet',style:'margin:0;font-size:11px;color:var(--muted)'},'Stored in this browser until Blob is linked.'));
+  }
 
   const drop=h('div',{class:'stor-drop',id:'storDrop'});
-  drop.innerHTML='<div class="stor-drop-inner"><div class="stor-drop-title">⬇ Drop receipt PDF here</div><div class="stor-drop-sub">or drag the handle below · 拖放 PDF 到這裡</div></div>';
+  drop.innerHTML='<div class="stor-drop-inner"><div class="stor-drop-title">⬇ Drop receipt PDF here</div><div class="stor-drop-sub">拖放 PDF 到這裡 · same number → same folder</div></div>';
 
-  const curBox=h('div',{style:'display:grid;gap:8px;padding:10px;border:1px solid var(--line);border-radius:10px;background:#fafbfc'});
-  curBox.append(h('div',{style:'font-weight:600'},'This receipt · '+(curNo||'(no number yet)')));
+  const listEl=h('div',{class:'stor-list',id:'storList'});
+  listEl.append(h('p',{class:'hint',style:'margin:0'},'No receipts stored yet.'));
 
-  const dragHandle=h('div',{class:'stor-drag-handle',id:'storDragChip',draggable:'true',title:'Drag onto the drop zone above'},'⠿ Drag this receipt into the box');
-  dragHandle.addEventListener('dragstart',e=>{
-   const meta=JSON.stringify({versy:'receipt',id:window.__VERSY_RECEIPT_ID,receiptNo:curNo,kind:receiptKind(),view:view==='small'?'one-page':'full'});
-   try{
-    e.dataTransfer.setData('application/x-versy-receipt',meta);
-    e.dataTransfer.setData('text/plain',meta);
-    e.dataTransfer.effectAllowed='copy';
-   }catch(err){}
-   drop.classList.add('dragover');
-   drop.classList.add('await-drop');
-  });
-  dragHandle.addEventListener('dragend',()=>{drop.classList.remove('dragover');drop.classList.remove('await-drop');});
+  wrap.append(drop, listEl);
 
-  const pickPdf=()=>{
-   const inp=document.createElement('input');
-   inp.type='file';inp.accept='application/pdf,.pdf';inp.multiple=true;
-   inp.onchange=()=>{
-    const files=[...(inp.files||[])];
-    if(!files.length)return;
-    let chain=Promise.resolve();
-    files.forEach(f=>{chain=chain.then(()=>ingestPdfFileToStorage(f,curNo));});
-    chain.then(()=>refreshStorageList()).catch(e=>pdfToast(String(e),false));
-   };
-   inp.click();
-  };
-
-  curBox.append(h('div',{style:'display:flex;flex-wrap:wrap;gap:6px;align-items:center'},
-   h('button',{type:'button',class:'pri',onclick:()=>storeCurrentReceiptToStorage().then(()=>refreshStorageList()).catch(e=>alert(e))},'Store current PDF'),
-   h('button',{type:'button',onclick:pickPdf},'Choose PDF…'),
-   dragHandle
-  ));
-  curBox.append(siblingButtonsFor(curNo, window.__VERSY_RECEIPT_ID));
-
-  const listEl=h('div',{class:'stor-list',id:'storList'},h('p',{class:'hint'},'Loading…'));
-
-  wrap.append(status, drop, curBox, listEl);
-
-  /* bind after elements exist in DOM — openDlg appends then we bind on next tick */
   setTimeout(()=>{
    const zone=$('#storDrop')||drop;
-   bindStorageDnD(zone, curNo, ()=>refreshStorageList());
+   bindStorageDnD(zone, curNo, ()=>refreshStorageList(true));
+   /* also allow dropping the current sheet onto the zone */
+   refreshStorageList(false);
   },0);
 
-  window.__versyRefreshStorageList=refreshStorageList;
-  function refreshStorageList(){
-   const el=$('#storList');if(!el)return;
-   el.innerHTML='';
+  window.__versyRefreshStorageList=()=>refreshStorageList(true);
+
+  function fileLabel(file){
+   const name=(file.pathname||file.filename||'PDF').split('/').pop();
+   const bits=[file.view,file.kind].filter(Boolean);
+   return {name, meta:bits.join(' · ')};
+  }
+  function renderFiles(kids, files){
+   kids.innerHTML='';
+   if(!files||!files.length){
+    kids.append(h('div',{class:'stor-tree-empty'},'No files'));
+    return;
+   }
+   files.forEach(file=>{
+    const lab=fileLabel(file);
+    const row=h('div',{class:'stor-tree-file'});
+    row.append(
+     h('span',{class:'stor-tree-branch'},''),
+     h('a',{href:file.url,target:'_blank',rel:'noopener',download:file.filename||lab.name},lab.name),
+     lab.meta?h('span',{class:'stor-tree-meta'},lab.meta):null
+    );
+    kids.append(row);
+   });
+  }
+  function loadFilesInto(kids, receiptNo){
+   kids.innerHTML='';
+   kids.append(h('div',{class:'stor-tree-empty'},'…'));
+   const local=localFilesFor(receiptNo);
    const api=listApiUrl();
-   const paint=(folders, remoteMap)=>{
-    if(!folders.length){el.append(h('p',{class:'hint'},'Nothing stored yet. Drop a PDF, Choose PDF, or Store current.'));return;}
+   const finish=(remote)=>{
+    const all=[...(local||[])];
+    const seen=new Set(all.map(f=>f.pathname||f.url));
+    (remote||[]).forEach(f=>{const k=f.pathname||f.url;if(!seen.has(k)){seen.add(k);all.push(f);}});
+    renderFiles(kids, all);
+   };
+   if(!api){finish([]);return;}
+   fetch(listApiUrl(receiptNo)).then(r=>r.json()).then(d=>finish((d&&d.files)||[])).catch(()=>finish([]));
+  }
+  function refreshStorageList(preferExpandLatest){
+   const el=$('#storList');if(!el)return;
+   const api=listApiUrl();
+   const locals=localFolders();
+
+   const paint=(folders)=>{
+    el.innerHTML='';
+    if(!folders.length){
+     el.append(h('p',{class:'hint',style:'margin:0'},'No receipts stored yet.'));
+     return;
+    }
+    let expandNo=null;
+    if(preferExpandLatest)expandNo=folders[0]&&folders[0].receiptNo;
     folders.forEach(f=>{
-     const row=h('div',{class:'stor-folder'});
-     const btn=h('button',{type:'button',style:'width:100%;text-align:left'}, (f.receiptNo||'?')+' · '+(f.count||0)+' file(s)'+(f.local&&!remoteMap[f.receiptNo]?' · local':''));
-     const kids=h('div',{class:'stor-files',style:'display:none;padding:6px 0 6px 4px'});
-     const src=findIndexRowByReceiptNo(f.receiptNo);
-     btn.onclick=()=>{
-      if(kids.style.display!=='none'){kids.style.display='none';return;}
-      kids.style.display='block';kids.innerHTML='';
-      kids.append(siblingButtonsFor(f.receiptNo, src&&src.id));
-      const local=localFilesFor(f.receiptNo);
-      const addFiles=(files,tag)=>{
-       (files||[]).forEach(file=>{
-        const meta=[file.view,file.kind,tag].filter(Boolean).join(' · ');
-        kids.append(h('div',{style:'display:flex;gap:8px;align-items:center;padding:4px 0;font-size:13px'},
-         h('a',{href:file.url,target:'_blank',rel:'noopener',download:file.filename||''},(file.pathname||'').split('/').pop()||file.filename||'PDF'),
-         h('span',{style:'color:var(--muted);font-size:11px'},meta)
-        ));
-       });
-      };
-      if(api){
-       kids.append(h('p',{class:'hint'},'Loading cloud…'));
-       fetch(listApiUrl(f.receiptNo)).then(r=>r.json()).then(d=>{
-        kids.innerHTML='';
-        kids.append(siblingButtonsFor(f.receiptNo, src&&src.id));
-        addFiles(local,'local');
-        addFiles((d&&d.files)||[],'blob');
-        if(!local.length&&!(d&&d.files&&d.files.length))kids.append(h('p',{class:'hint'},'Empty folder'));
-       }).catch(()=>{kids.innerHTML='';kids.append(siblingButtonsFor(f.receiptNo, src&&src.id));addFiles(local,'local');});
-      }else{
-       addFiles(local,'local');
-       if(!local.length)kids.append(h('p',{class:'hint'},'Empty folder'));
-      }
-     };
-     row.append(btn,kids);el.append(row);
+     const row=h('div',{class:'stor-tree-row'});
+     const line=h('button',{type:'button',class:'stor-tree-line'}, (f.receiptNo||'?'));
+     const kids=h('div',{class:'stor-tree-kids',hidden:'true'});
+     line.addEventListener('click',()=>{
+      const wasOpen=row.classList.contains('open');
+      el.querySelectorAll('.stor-tree-row.open').forEach(r=>{r.classList.remove('open');const k=r.querySelector('.stor-tree-kids');if(k)k.hidden=true;});
+      if(!wasOpen){row.classList.add('open');kids.hidden=false;loadFilesInto(kids, f.receiptNo);}
+     });
+     row.append(line, kids);
+     el.append(row);
+     if(expandNo&&f.receiptNo===expandNo){
+      row.classList.add('open');kids.hidden=false;loadFilesInto(kids, f.receiptNo);
+     }
     });
    };
-   const locals=localFolders();
-   if(!api){paint(locals,{});return;}
+
+   /* always paint locals immediately — never stick on Loading… */
+   if(!api){paint(locals);return;}
+   paint(locals);
    fetch(api).then(r=>r.json()).then(data=>{
     const remote=(data&&data.folders)||[];
-    const map={};remote.forEach(f=>{map[f.receiptNo]=f;});
     const merged=new Map();
     locals.forEach(f=>merged.set(f.receiptNo,{...f}));
     remote.forEach(f=>{
@@ -2315,10 +2305,9 @@ function storageTab(){
      cur.latest=Math.max(cur.latest||0,f.latest||0);
      merged.set(f.receiptNo,cur);
     });
-    paint([...merged.values()].sort((a,b)=>(b.latest||0)-(a.latest||0)), map);
-   }).catch(()=>paint(locals,{}));
+    paint([...merged.values()].sort((a,b)=>(b.latest||0)-(a.latest||0)));
+   }).catch(()=>paint(locals));
   }
-  refreshStorageList();
   return wrap;
  });
 }
@@ -2331,7 +2320,10 @@ function savePdf(){
   document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   if(state.receipt&&state.receipt.current){state.receipt.printed=true;save(true);}
-  return storeReceiptPdf(r.blob,{filename:r.filename,kind:r.kind,receiptNo:r.receiptNo,view:r.view});
+  return storeReceiptPdf(r.blob,{filename:r.filename,kind:r.kind,receiptNo:r.receiptNo,view:r.view}).then(res=>{
+   try{if(window.__versyRefreshStorageList)$('#dlg')&&$('#dlg').open&&window.__versyRefreshStorageList();}catch(e){}
+   return res;
+  });
  }).catch(e=>alert('Could not make the PDF: '+e));
 }
 /* ---------- shell and top bar ---------- */
@@ -2369,11 +2361,12 @@ function buildBar(){
  if(!editing){
   bar.append(h('span',{class:'ttl'},isPaidKind()?'Paid in full':'Purchase receipt'),h('span',{class:'ver'},VERSION),viewSeg(),h('span',{class:'sp'}),langSeg(),
    h('button',{onclick:newReceipt},'New receipt'),
-   h('button',{onclick:()=>{const id='r-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);location.href='receipt.html?id='+encodeURIComponent(id)+'&kind=paid-in-full';},title:'New paid-in-full settlement receipt'},'Paid in full'),
+   h('button',{onclick:()=>openSiblingReceipt({kind:'regular',view:'one-page'}),title:'Same serial and details as one-page'},'＋ One-page'),
+   h('button',{onclick:()=>openSiblingReceipt({kind:'paid-in-full',view:'full'}),title:'Same serial and details as paid-in-full',style:'border-color:#a53a2a;color:#a53a2a'},'＋ Paid in full'),
    h('button',{onclick:()=>{if(confirm('Clear everything typed into the form?'))renderSheet(true);}},'Clear form'),
    h('button',{onclick:toggleEdit},'✎ Edit'),
    h('button',{onclick:()=>window.print()},'Print'),h('button',{class:'pri',onclick:savePdf,title:'Save a clean PDF with no browser date, title or file path'},'⬇ Save PDF'),
-   h('button',{onclick:storageTab,title:'Browse archived PDFs by receipt number'},'Storage'),
+   h('button',{onclick:storageTab,title:'Drop and browse PDFs by receipt number'},'Storage'),
    h('button',{title:'Settings, receipt numbers, glossary, backup',onclick:menuDialog},'⋯'));
  }else{
   bar.append(h('span',{class:'ttl'},'Editing'),h('span',{class:'ver'},VERSION),viewSeg(),h('span',{class:'st',id:'st'}),h('span',{class:'sp'}),
@@ -2751,6 +2744,18 @@ body.kind-paid section[data-bid="b13"],body.kind-paid section[data-bid="b14"]{di
 .stor-drop.dragover,.stor-drop.await-drop{border-color:#a53a2a;background:rgba(165,58,42,.10);box-shadow:inset 0 0 0 2px rgba(165,58,42,.35)}
 .stor-drag-handle{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px dashed #a53a2a;border-radius:8px;background:#fff;color:#a53a2a;font:600 12px system-ui;cursor:grab;-webkit-user-drag:element;user-select:none}
 .stor-drag-handle:active{cursor:grabbing}
+.stor-list{display:grid;gap:6px}
+.stor-tree-row{border:1px solid var(--line);border-radius:8px;background:#fff;overflow:hidden}
+.stor-tree-line{width:100%;text-align:left;font:600 13px system-ui;padding:10px 12px;border:0;background:#fff;cursor:pointer;color:var(--navy)}
+.stor-tree-line:hover{background:#fafbfc}
+.stor-tree-row.open .stor-tree-line{border-bottom:1px solid var(--line);background:#f8f9fb}
+.stor-tree-kids{padding:8px 12px 10px 22px;display:grid;gap:6px;background:#fcfcfd}
+.stor-tree-kids[hidden]{display:none!important}
+.stor-tree-file{display:flex;align-items:center;gap:8px;font-size:13px;position:relative;padding-left:14px}
+.stor-tree-file::before{content:"";position:absolute;left:0;top:-10px;bottom:50%;width:10px;border-left:2px solid #222;border-bottom:2px solid #222;border-bottom-left-radius:4px}
+.stor-tree-meta{color:var(--muted);font-size:11px}
+.stor-tree-empty{font-size:12px;color:var(--muted);padding-left:14px}
+.stor-quiet{line-height:1.35}
 .stor-actions button{font:inherit;font-size:12px;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:#fff;cursor:pointer}
 .stor-actions button.pri{color:#fff}
 
