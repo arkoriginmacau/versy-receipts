@@ -65,10 +65,12 @@ module.exports = async function handler(req, res) {
         return {
           url: b.url,
           pathname: b.pathname,
+          filename: `${meta.view || 'full'}-${meta.kind || 'regular'}-${meta.receiptNo || no}.pdf`,
           uploadedAt: b.uploadedAt,
           size: b.size,
           view: meta.view,
           kind: meta.kind,
+          receiptNo: meta.receiptNo || no,
         };
       }));
       files.sort((a, b) => String(b.uploadedAt || '').localeCompare(String(a.uploadedAt || '')));
