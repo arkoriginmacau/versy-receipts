@@ -1,4 +1,4 @@
-const { put } = require('@vercel/blob');
+const { put, list, del } = require('@vercel/blob');
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -11,6 +11,10 @@ function safeNo(no) {
     .replace(/[^A-Za-z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 80) || 'receipt';
+}
+
+function formatPrefix(receiptNo, view, kind) {
+  return `receipts/${receiptNo}/${view}-${kind}`;
 }
 
 module.exports = async function handler(req, res) {
@@ -33,13 +37,27 @@ module.exports = async function handler(req, res) {
     if (buf.length < 20) return res.status(400).json({ error: 'empty pdf' });
     if (buf.length > 8 * 1024 * 1024) return res.status(413).json({ error: 'pdf too large' });
 
-    const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    const pathname = `receipts/${receiptNo}/${view}-${kind}-${ts}.pdf`;
+    // One file per number+format: stable name, overwrite; remove legacy timestamped copies
+    const pathname = `receipts/${receiptNo}/${view}-${kind}.pdf`;
+    const prefix = formatPrefix(receiptNo, view, kind);
+    try {
+      const existing = await list({ prefix, token });
+      const toDel = (existing.blobs || [])
+        .map((b) => b.url)
+        .filter(Boolean);
+      if (toDel.length) {
+        await del(toDel, { token });
+      }
+    } catch (e) {
+      console.warn('cleanup prior blobs failed', e);
+    }
+
     const blob = await put(pathname, buf, {
       access: 'public',
       contentType: 'application/pdf',
       token,
       addRandomSuffix: false,
+      allowOverwrite: true,
     });
 
     return res.status(200).json({
@@ -50,6 +68,7 @@ module.exports = async function handler(req, res) {
       kind,
       view,
       size: buf.length,
+      replaced: true,
     });
   } catch (err) {
     console.error(err);

@@ -14,19 +14,37 @@ function safeNo(no) {
 }
 
 function parsePath(pathname) {
-  // receipts/{receiptNo}/{view}-{kind}-{timestamp}.pdf
+  // Stable: receipts/{receiptNo}/{view}-{kind}.pdf
+  // Legacy: receipts/{receiptNo}/{view}-{kind}-{timestamp}.pdf
   const parts = String(pathname || '').split('/');
   const receiptNo = parts[1] || '';
-  const file = parts[2] || '';
-  let view = '', kind = '';
+  const file = (parts[2] || '').replace(/\.pdf$/i, '');
+  let view = 'full', kind = 'regular';
   if (file.startsWith('one-page-')) {
     view = 'one-page';
-    kind = file.slice('one-page-'.length).startsWith('paid-in-full') ? 'paid-in-full' : 'regular';
+    const rest = file.slice('one-page-'.length);
+    kind = rest.startsWith('paid-in-full') ? 'paid-in-full' : 'regular';
   } else if (file.startsWith('full-')) {
     view = 'full';
-    kind = file.slice('full-'.length).startsWith('paid-in-full') ? 'paid-in-full' : 'regular';
+    const rest = file.slice('full-'.length);
+    kind = rest.startsWith('paid-in-full') ? 'paid-in-full' : 'regular';
   }
   return { receiptNo, view, kind, file };
+}
+
+function dedupeBlobFiles(files) {
+  const best = new Map();
+  for (const f of files) {
+    const k = `${f.view || 'full'}|${f.kind || 'regular'}`;
+    const prev = best.get(k);
+    const ts = f.uploadedAt ? new Date(f.uploadedAt).getTime() : 0;
+    const prevTs = prev && prev.uploadedAt ? new Date(prev.uploadedAt).getTime() : 0;
+    // Prefer stable name (no extra timestamp segment), else newest
+    const stable = /\/(full|one-page)-(regular|paid-in-full)\.pdf$/i.test(f.pathname || '');
+    const prevStable = prev && /\/(full|one-page)-(regular|paid-in-full)\.pdf$/i.test(prev.pathname || '');
+    if (!prev || (stable && !prevStable) || (stable === prevStable && ts >= prevTs)) best.set(k, f);
+  }
+  return [...best.values()];
 }
 
 module.exports = async function handler(req, res) {
@@ -42,7 +60,7 @@ module.exports = async function handler(req, res) {
     if (no) {
       const prefix = `receipts/${no}/`;
       const result = await list({ prefix, token });
-      const files = (result.blobs || []).map((b) => {
+      const files = dedupeBlobFiles((result.blobs || []).map((b) => {
         const meta = parsePath(b.pathname);
         return {
           url: b.url,
@@ -52,7 +70,7 @@ module.exports = async function handler(req, res) {
           view: meta.view,
           kind: meta.kind,
         };
-      });
+      }));
       files.sort((a, b) => String(b.uploadedAt || '').localeCompare(String(a.uploadedAt || '')));
       return res.status(200).json({ ok: true, receiptNo: no, files });
     }

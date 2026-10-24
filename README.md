@@ -8,7 +8,7 @@ Hosted **Artwork Purchase Receipt** (Versy / paperworks) for Ark’s Coffee Shop
 - Editor: https://arkoriginmacau.github.io/versy-receipts/receipt.html
 - Coffee Shop tile: **Versy receipts** (Paperworks)
 
-## Features (v0.26)
+## Features (v0.27)
 
 - **Regular** purchase receipt (A/B finished vs custom, bilingual, one-page view)
 - **Paid in full / 已全額支付** — same wrapper/layout/ends; settlement body (final payment, deposits hidden); Gallery sold red `#a53a2a`
@@ -22,7 +22,7 @@ Hosted **Artwork Purchase Receipt** (Versy / paperworks) for Ark’s Coffee Shop
 
 Save PDF still downloads locally, then best-effort uploads to Vercel Blob:
 
-`receipts/{receiptNo}/{full|one-page}-{regular|paid-in-full}-{timestamp}.pdf`
+`receipts/{receiptNo}/{full|one-page}-{regular|paid-in-full}.pdf` (one per number+format; overwrite)
 
 ### Setup
 
@@ -39,5 +39,5 @@ Do **not** commit secrets. GitHub Pages keeps serving static HTML without the AP
 
 ## Local / host notes
 
-- Template version shown in the top bar (`v0.26 · 26.10.24`)
+- Template version shown in the top bar (`v0.27 · 26.10.24`)
 - Host shell `0.2` — per-id localStorage + index; `?kind=paid-in-full` for settlement receipts

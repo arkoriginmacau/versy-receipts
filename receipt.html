@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.26 · 26.10.24';
+const VERSION='v0.27 · 26.10.24';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1969,15 +1969,43 @@ function readLocalStore(){
 function writeLocalStore(j){
  try{localStorage.setItem(localStoreKey(),JSON.stringify(j));}catch(e){throw new Error('Browser storage full — could not keep PDF locally');}
 }
-function localStorePut(entry){
+function formatKey(receiptNo, view, kind){
+ return String(receiptNo||'')+'|'+String(view||'full')+'|'+String(kind||'regular');
+}
+function stablePathname(receiptNo, view, kind){
+ return 'receipts/'+receiptNo+'/'+(view||'full')+'-'+(kind||'regular')+'.pdf';
+}
+function dedupeFilesByFormat(files){
+ const best=new Map();
+ (files||[]).forEach(f=>{
+  const k=formatKey(f.receiptNo, f.view||'full', f.kind||'regular');
+  const prev=best.get(k);
+  const ts=+f.uploadedAt||0;
+  if(!prev||ts>=(+prev.uploadedAt||0))best.set(k,f);
+ });
+ return [...best.values()].sort((a,b)=>(+b.uploadedAt||0)-(+a.uploadedAt||0));
+}
+function scrubLocalStoreDuplicates(){
  const j=readLocalStore();
- j.files=j.files.filter(f=>!(f.receiptNo===entry.receiptNo&&f.pathname===entry.pathname));
+ const before=j.files.length;
+ j.files=dedupeFilesByFormat(j.files);
+ if(j.files.length!==before)writeLocalStore(j);
+ return j;
+}
+function localStorePut(entry){
+ const j=scrubLocalStoreDuplicates();
+ const view=entry.view||'full', kind=entry.kind||'regular';
+ entry.view=view;entry.kind=kind;
+ entry.pathname=stablePathname(entry.receiptNo, view, kind);
+ entry.filename=entry.filename||((entry.receiptNo||'receipt')+'-'+view+'-'+kind+'.pdf');
+ j.files=j.files.filter(f=>formatKey(f.receiptNo,f.view,f.kind)!==formatKey(entry.receiptNo,view,kind));
  j.files.unshift(entry);
  j.files=j.files.slice(0,80);
  writeLocalStore(j);
  return entry;
 }
 function localFolders(){
+ scrubLocalStoreDuplicates();
  const map=new Map();
  readLocalStore().files.forEach(f=>{
   const row=map.get(f.receiptNo)||{receiptNo:f.receiptNo,count:0,latest:0,local:true};
@@ -1986,7 +2014,8 @@ function localFolders(){
  return [...map.values()].sort((a,b)=>(b.latest||0)-(a.latest||0));
 }
 function localFilesFor(receiptNo){
- return readLocalStore().files.filter(f=>f.receiptNo===receiptNo);
+ scrubLocalStoreDuplicates();
+ return dedupeFilesByFormat(readLocalStore().files.filter(f=>f.receiptNo===receiptNo));
 }
 function storageMode(){
  return uploadApiUrl()?'blob':'local';
@@ -1994,16 +2023,15 @@ function storageMode(){
 function storeReceiptPdf(blob, opts){
  opts=opts||{};
  const receiptNo=opts.receiptNo||'receipt';
- const kind=opts.kind||'regular';
- const view=opts.view||'full';
- const filename=opts.filename||(receiptNo+'.pdf');
- const ts=new Date().toISOString().replace(/[:.]/g,'-');
- const pathname='receipts/'+receiptNo+'/'+view+'-'+kind+'-'+ts+'.pdf';
+ const kind=opts.kind==='paid-in-full'?'paid-in-full':'regular';
+ const view=opts.view==='one-page'?'one-page':'full';
+ const pathname=stablePathname(receiptNo, view, kind);
+ const filename=opts.filename||(receiptNo+'-'+view+'-'+kind+'.pdf');
  const api=uploadApiUrl();
  const finishLocal=()=>blobToBase64(blob).then(pdfBase64=>{
   const dataUrl='data:application/pdf;base64,'+pdfBase64;
   localStorePut({receiptNo,kind,view,filename,pathname,url:dataUrl,uploadedAt:Date.now(),local:true,size:blob.size||0});
-  pdfToast('Stored locally under '+receiptNo+(api?'':' (Blob not configured)'),true);
+  pdfToast('Stored locally under '+receiptNo+' · '+view+'-'+kind+(api?'':' (Blob not configured)'),true);
   return {ok:true,local:true,pathname,receiptNo,kind,view};
  });
  if(!api){
@@ -2292,10 +2320,8 @@ function storageTab(){
    const local=localFilesFor(receiptNo);
    const api=listApiUrl();
    const finish=(remote)=>{
-    const all=[...(local||[])];
-    const seen=new Set(all.map(f=>f.pathname||f.url));
-    (remote||[]).forEach(f=>{const k=f.pathname||f.url;if(!seen.has(k)){seen.add(k);all.push(f);}});
-    renderFiles(kids, all);
+    const all=[...(local||[]),...(remote||[])];
+    renderFiles(kids, dedupeFilesByFormat(all));
    };
    if(!api){finish([]);return;}
    fetch(listApiUrl(receiptNo)).then(r=>r.json()).then(d=>finish((d&&d.files)||[])).catch(()=>finish([]));
