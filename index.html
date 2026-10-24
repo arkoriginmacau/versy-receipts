@@ -12,8 +12,9 @@ header{background:#fff;border-bottom:1px solid var(--line);padding:14px 18px;dis
 header h1{margin:0;font-size:18px;color:var(--navy)}
 header .sub{color:var(--muted);font-size:13px}
 header .sp{flex:1}
-a.btn{appearance:none;border:1px solid var(--line);background:#fff;color:var(--navy);font:600 13px system-ui;padding:8px 14px;border-radius:8px;cursor:pointer;text-decoration:none}
-a.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+a.btn,button.btn{appearance:none;border:1px solid var(--line);background:#fff;color:var(--navy);font:600 13px system-ui;padding:8px 14px;border-radius:8px;cursor:pointer;text-decoration:none}
+a.btn.primary,button.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+a.btn.paid{border-color:var(--accent);color:var(--accent)}
 main{max-width:720px;margin:24px auto;padding:0 16px}
 .card{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
 .row{display:flex;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);text-decoration:none;color:inherit}
@@ -21,8 +22,10 @@ main{max-width:720px;margin:24px auto;padding:0 16px}
 .row:hover{background:#fafbfc}
 .row .t{font-weight:600;flex:1;min-width:0}
 .row .m{font-size:12px;color:var(--muted);white-space:nowrap}
+.badge{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;vertical-align:middle}
 .empty{padding:28px 14px;color:var(--muted);text-align:center}
 .ver{font-size:11px;color:var(--muted);margin-top:16px;text-align:center}
+.hint{font-size:12px;color:var(--muted);margin:0 0 12px}
 </style>
 </head>
 <body>
@@ -33,16 +36,21 @@ main{max-width:720px;margin:24px auto;padding:0 16px}
   </div>
   <div class="sp"></div>
   <a class="btn primary" id="newBtn" href="#">New receipt</a>
+  <a class="btn paid" id="paidBtn" href="#">Paid in full</a>
+  <a class="btn" id="storBtn" href="receipt.html#storage">Storage</a>
 </header>
 <main>
+  <p class="hint">Recent receipts in this browser. <b>Paid in full</b> opens a settlement receipt (same layout, final-payment body). <b>Storage</b> browses PDFs archived to Vercel Blob by receipt number.</p>
   <div class="card" id="list"><div class="empty">Loading…</div></div>
-  <p class="ver">Host 0.1 · template v0.19 · 26.10.17 · fills persist in this browser</p>
+  <p class="ver">Host 0.2 · template v0.21 · 26.10.24 · fills persist in this browser</p>
 </main>
 <script>
 (function(){
   const INDEX_KEY='versy-receipts-index-v1';
   function nid(){return 'r-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);}
   document.getElementById('newBtn').href='receipt.html?id='+encodeURIComponent(nid());
+  document.getElementById('paidBtn').href='receipt.html?id='+encodeURIComponent(nid())+'&kind=paid-in-full';
+  document.getElementById('storBtn').href='receipt.html?id='+encodeURIComponent(nid())+'&storage=1';
   function fmt(ts){try{return new Date(ts).toLocaleString();}catch(e){return '';}}
   function esc(s){return String(s||'').replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});}
   let list=[];
@@ -50,12 +58,15 @@ main{max-width:720px;margin:24px auto;padding:0 16px}
   if(!Array.isArray(list))list=[];
   const el=document.getElementById('list');
   if(!list.length){
-    el.innerHTML='<div class="empty">No saved receipts yet. Start with <b>New receipt</b> — fills stay in this browser after reload.</div>';
+    el.innerHTML='<div class="empty">No saved receipts yet. Start with <b>New receipt</b> or <b>Paid in full</b>.</div>';
     return;
   }
   el.innerHTML=list.map(function(r){
-    return '<a class="row" href="receipt.html?id='+encodeURIComponent(r.id)+'">'+
-      '<div class="t">'+esc(r.title||'Untitled receipt')+(r.receiptNo?' <span class="m">· '+esc(r.receiptNo)+'</span>':'')+'</div>'+
+    const kind=r.kind==='paid-in-full'?'paid-in-full':'regular';
+    const badge=kind==='paid-in-full'?'<span class="badge">Paid in full · 已全額支付</span>':'';
+    const href='receipt.html?id='+encodeURIComponent(r.id)+(kind==='paid-in-full'?'&kind=paid-in-full':'');
+    return '<a class="row" href="'+href+'">'+
+      '<div class="t">'+esc(r.title||'Untitled receipt')+badge+(r.receiptNo?' <span class="m">· '+esc(r.receiptNo)+'</span>':'')+'</div>'+
       '<div class="m">'+esc(fmt(r.updatedAt))+'</div></a>';
   }).join('');
 })();

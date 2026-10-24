@@ -1,6 +1,9 @@
 {
   "name": "versy-receipts",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "private": true,
-  "description": "Hosted Versy (paperworks) Artwork Purchase Receipt for Coffee Shop launcher"
+  "description": "Hosted Versy (paperworks) Artwork Purchase Receipt for Coffee Shop launcher",
+  "dependencies": {
+    "@vercel/blob": "^0.27.3"
+  }
 }

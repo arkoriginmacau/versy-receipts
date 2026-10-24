@@ -1490,7 +1490,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.20 · 26.10.24';
+const VERSION='v0.21 · 26.10.24';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1622,6 +1622,52 @@ function translate(v){
  for(const e of state.glossary||[]){const en=e.en.toLowerCase();if(cjk?e.zh===v.trim():(en===k||en===alt))return{known:true,en:e.en,zh:e.zh};}
  return{known:false};
 }
+
+/* ---------- default merchant signature (all receipt kinds) ---------- */
+const SIG_KEY='versy-merchant-sig';
+const DEFAULT_SIG_SVG=`data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="280" height="70" viewBox="0 0 280 70"><text x="8" y="48" font-family="Segoe Script,Brush Script MT,cursive" font-size="28" fill="#1F2A44">Arkorigin</text><text x="8" y="64" font-family="Microsoft JhengHei,sans-serif" font-size="11" fill="#5F6673">鳳仙</text></svg>')}`;
+function getMerchantSig(){
+ try{const s=localStorage.getItem(SIG_KEY);if(s)return s;}catch(e){}
+ if(state&&state.settings&&state.settings.merchantSig)return state.settings.merchantSig;
+ return DEFAULT_SIG_SVG;
+}
+function setMerchantSig(dataUrl){
+ if(state&&state.settings)state.settings.merchantSig=dataUrl||'';
+ try{if(dataUrl)localStorage.setItem(SIG_KEY,dataUrl);else localStorage.removeItem(SIG_KEY);}catch(e){}
+ save(true);renderSheet();
+}
+function merchantSigHtml(extraClass){
+ const src=getMerchantSig();
+ return `<div class="msig ${extraClass||''}"><img class="msig-img" src="${src.replace(/"/g,'&quot;')}" alt="Merchant signature"><button type="button" class="msig-set no-print" data-act="set-sig" title="Change default signature">✎</button></div>`;
+}
+function isMerchantSigLine(line){
+ const en=((line&&line.en)||'').toLowerCase();
+ return /arkorigin|merchant|for ark|商戶|鳳仙/.test(en)||/商戶|鳳仙/.test((line&&line.zh)||'');
+}
+function pickSigFile(){
+ const inp=$('#imgf');if(!inp)return;
+ inp.accept='image/*';
+ inp.onchange=function(){
+  const f=inp.files&&inp.files[0];inp.value='';
+  if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{setMerchantSig(String(r.result||''));pdfToast('Default signature updated',true);};
+  r.readAsDataURL(f);
+ };
+ inp.click();
+}
+function signatureDialog(){
+ openDlg('Default signature 預設簽名',()=>h('div',{style:'display:grid;gap:12px'},
+  h('p',{class:'hint'},'Shown on every electronic receipt (full, one-page, paid-in-full) above the merchant line. Print and Save PDF include it.'),
+  h('div',{style:'background:#fafbfc;border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center'},
+   h('img',{src:getMerchantSig(),alt:'preview',style:'max-height:80px;max-width:100%'})),
+  h('div',{style:'display:flex;gap:8px;flex-wrap:wrap'},
+   h('button',{class:'pri',onclick:()=>{pickSigFile();}},'Upload image'),
+   h('button',{onclick:()=>{setMerchantSig('');refreshDlg();renderSheet();}},'Reset to placeholder'),
+   h('button',{onclick:()=>$('#dlg').close()},'Done'))
+ ));
+}
+
 const R={
  title:b=>{const paid=isPaidKind();const en=paid?'Paid in Full Receipt':b.en;const zh=paid?'已全額支付收據':b.zh;return `<div class="title${paid?' paid-kind':''}">${paid?'<div class="paid-badge"><span class="en">Paid in full</span><span class="sep"> · </span><span class="zh">已全額支付</span></div>':''}<h1><span class="en"${A(b,'en','Title')}>${esc(en)}</span></h1><div class="z1 zh"${A(b,'zh','中文標題')}>${esc(zh)}</div><div class="brand"${A(b,'brand','Brand line')}>${esc(b.brand)}</div>${(state.settings.address||editing)?`<div class="addr"${A(null,'@s.address','Address')}>${esc(state.settings.address||'')}</div>`:''}</div>`;},
  heading:b=>`<h2 class="h">${hd2(b,'en','zh')}</h2>`,
@@ -1643,7 +1689,7 @@ const R={
   return `<div class="stp"><div class="sl">${items.map((s,i)=>`<div class="s"><b>${i+1}.</b><div><div class="en"${A(b,`items.${i}.en`,'English')}>${tx(b,`items.${i}.en`)}</div><div class="zh"${A(b,`items.${i}.zh`,'中文')}>${tx(b,`items.${i}.zh`)}</div></div>${editing?`<div class="ecell">${ctl(b,'items',i,items.length)}</div>`:''}</div>`).join('')}${editing?addBtn(b,'items','+ Add step'):''}</div>${(fig||editing)?`<figure>${fig}${cap}${tools}</figure>`:''}</div>`;
  },
  images:b=>{const it=b.items||[];return `<div class="imgs">${it.map((i,k)=>`<figure class="fig" style="width:${+i.w||200}px">${i.src?`<img src="${esc(i.src)}" alt="${esc(i.en)}">`:'<div class="ph">No image yet</div>'}${editing?`<div class="itools"><button data-act="imgrep" data-b="${b.id}" data-i="${k}">Replace</button><button data-act="imgw" data-b="${b.id}" data-i="${k}" data-d="-20" title="Smaller">−</button><button data-act="imgw" data-b="${b.id}" data-i="${k}" data-d="20" title="Larger">+</button>${ctl(b,'items',k,it.length)}</div>`:''}<figcaption><b class="en"${A(b,`items.${k}.en`,'Caption')}>${esc(i.en)}</b><span class="zh"${A(b,`items.${k}.zh`,'說明')}>${esc(i.zh)}</span></figcaption></figure>`).join('')}</div>${editing?addBtn(b,'items','+ Add image'):''}`;},
- signatures:b=>{const ls=b.lines||[];return `<div class="sg">${ls.map((l,i)=>`<div><div class="ln"></div><div class="lb">${bi2(b,`lines.${i}.en`,`lines.${i}.zh`)}${editing?` <span class="ec">${ctl(b,'lines',i,ls.length)}</span>`:''}</div></div><div data-dt><div class="ln"><input type="text" class="dt" data-fk="${b.id}:sg${i}" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="yyyy-mm-dd" aria-label="Date"></div><div class="lb dl"><span>${bi2(b,'dateEn','dateZh')}</span><button type="button" class="today">Today</button></div></div>`).join('')}</div>${editing?addBtn(b,'lines','+ Add signature line'):''}`;},
+ signatures:b=>{const ls=b.lines||[];return `<div class="sg">${ls.map((l,i)=>{const mer=isMerchantSigLine(l);return `<div>${mer?merchantSigHtml():'<div class="ln"></div>'}<div class="lb">${bi2(b,`lines.${i}.en`,`lines.${i}.zh`)}${editing?` <span class="ec">${ctl(b,'lines',i,ls.length)}</span>`:''}</div></div><div data-dt><div class="ln"><input type="text" class="dt" data-fk="${b.id}:sg${i}" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="yyyy-mm-dd" aria-label="Date"></div><div class="lb dl"><span>${bi2(b,'dateEn','dateZh')}</span><button type="button" class="today">Today</button></div></div>`;}).join('')}</div>${editing?addBtn(b,'lines','+ Add signature line'):''}`;},
  spacer:b=>editing?`<div class="spc" style="height:${+b.h||20}px"><span>blank space · ${+b.h||0}px</span><button data-act="sp" data-b="${b.id}" data-d="-6">−</button><button data-act="sp" data-b="${b.id}" data-d="6">+</button></div>`:`<div style="height:${+b.h||20}px"></div>`
 };
 const btb=(b,i,n)=>`<div class="btb"><button data-act="b-up" data-b="${b.id}" title="Move block up"${i===0?' disabled':''}>↑</button><button data-act="b-down" data-b="${b.id}" title="Move block down"${i===n-1?' disabled':''}>↓</button><button data-act="b-ins" data-b="${b.id}" title="Insert a new block below">＋</button><button data-act="b-dup" data-b="${b.id}" title="Duplicate block">⧉</button><button data-act="b-set" data-b="${b.id}" title="Block settings (new page, hide, red strike-through)">⚙</button><button class="dng" data-act="b-del" data-b="${b.id}" title="Delete block">✕</button></div>`;
@@ -1740,7 +1786,7 @@ ${sm.showBalance&&(bal||editing)?`<div class="sm-l">${sl('bal')}</div><div class
 </div>
 ${editing?`<div class="sm-stamps"><span class="sm-stamp">${sl('full')}</span><span class="sm-stamp">${sl('part')}</span></div>`:(status?`<div class="sm-stamps"><span class="sm-stamp">${bi(L[status].en,L[status].zh)}</span></div>`:'')}
 <p class="sm-note">${txt('note')}</p>
-<div class="sm-foot">${sm.showSign?`<div class="sm-sign"><div class="ln"></div><div class="lb">${sl('sign')}</div></div>`:'<div></div>'}${qr?`<figure class="sm-qr">${qr}<figcaption>${sl('scan')}</figcaption></figure>`:''}</div>
+<div class="sm-foot">${sm.showSign?`<div class="sm-sign">${merchantSigHtml('sm')}<div class="lb">${sl('sign')}</div></div>`:'<div></div>'}${qr?`<figure class="sm-qr">${qr}<figcaption>${sl('scan')}</figcaption></figure>`:''}</div>
 <p class="sm-terms">${txt('terms')}</p>
 </div>`;
 }
@@ -1763,22 +1809,30 @@ function applyPaidKindDefaults(){
   const q=new URLSearchParams(location.search);
   if(q.get('kind')!=='paid-in-full'){q.set('kind','paid-in-full');history.replaceState(null,'',location.pathname+'?'+q.toString()+location.hash);}
  }catch(e){}
- if(state.settings){state.settings.accent='#a53a2a';
-  if(state.settings.headerRight&&/Artwork Purchase Receipt/i.test(state.settings.headerRight))
-   state.settings.headerRight='Paid in Full Receipt 已全額支付收據';
+ if(state.settings){
+  state.settings.accent='#a53a2a';
+  state.settings.headerRight='Paid in Full Receipt 已全額支付收據';
  }
  const t=(state.blocks||[]).find(b=>b&&b.type==='title');
  if(t){t.en='Paid in Full Receipt';t.zh='已全額支付收據';}
- /* tick Paid in full on finished + custom payment rows */
+ /* Settlement body: same wrapper; Payment → Settlement; hide deposit rows */
  (state.blocks||[]).forEach(b=>{
+  if(!b)return;
+  if(b.id==='b10'&&b.type==='heading'){b.en='Settlement';b.zh='結算';}
+  if(b.id==='b11'&&b.type==='subheading'){b.en='Final payment';b.zh='最終付款';}
+  if(b.id==='b13'||b.id==='b14'){b.hidden=true;}
+  if(b.id==='b06'){b.en='This receipt confirms the artwork has been paid in full.';b.zh='本收據確認該藝術品已全額支付。';}
   if(b.type!=='fields')return;
   (b.rows||[]).forEach((r,i)=>{
-   if(r.kind!=='checks')return;
-   (r.options||[]).forEach((o,j)=>{
-    if(o.id==='paidfull'||/^paid in full$/i.test((o.en||'').trim())){
+   if(r.kind==='checks')(r.options||[]).forEach((o,j)=>{
+    if(o.id==='paidfull'||/^paid in full$/i.test((o.en||'').trim()))
      formStash[b.id+':'+i+':'+j]={c:true,v:''};
-    }
    });
+   if(/^Amount Paid|已付金額$/i.test((r.en||'').trim())||r.en==='Amount Paid'){
+    const price=(()=>{try{return firstVal('price');}catch(e){return '';}})();
+    const cur=(formStash[b.id+':'+i]&&formStash[b.id+':'+i].v)||'';
+    if(price&&!cur)formStash[b.id+':'+i]={c:false,v:price};
+   }
   });
  });
 }
@@ -1867,21 +1921,41 @@ function pdfToast(msg,ok){
  t.textContent=msg;t.style.display='block';
  clearTimeout(t._h);t._h=setTimeout(()=>{t.style.display='none';},3200);
 }
+function apiBase(){
+ try{const u=localStorage.getItem('versy-api-base');if(u)return String(u).replace(/\/$/,'');}catch(e){}
+ if(window.__VERSY_API_BASE)return String(window.__VERSY_API_BASE).replace(/\/$/,'');
+ try{const u=localStorage.getItem('versy-upload-api');if(u)return String(u).replace(/\/api\/upload-receipt\/?$/,'');}catch(e){}
+ if(window.__VERSY_UPLOAD_API)return String(window.__VERSY_UPLOAD_API).replace(/\/api\/upload-receipt\/?$/,'');
+ if(/\.github\.io$/i.test(location.hostname))return '';
+ return '';
+}
 function uploadApiUrl(){
- try{const u=localStorage.getItem('versy-upload-api');if(u)return u;}catch(e){}
- if(window.__VERSY_UPLOAD_API)return window.__VERSY_UPLOAD_API;
+ const b=apiBase();
+ if(b)return b+'/api/upload-receipt';
  if(/\.github\.io$/i.test(location.hostname))return '';
  return '/api/upload-receipt';
 }
-function archivePdf(blob,filename,kind,receiptNo){
+function listApiUrl(receiptNo){
+ const b=apiBase();
+ const base=b?b+'/api/list-receipts':'/api/list-receipts';
+ if(/\.github\.io$/i.test(location.hostname)&&!b)return '';
+ return receiptNo?base+'?no='+encodeURIComponent(receiptNo):base;
+}
+function blobToBase64(blob){
+ return new Promise((resolve,reject)=>{
+  const r=new FileReader();
+  r.onload=()=>{const s=String(r.result||'');const i=s.indexOf(',');resolve(i>=0?s.slice(i+1):s);};
+  r.onerror=reject;r.readAsDataURL(blob);
+ });
+}
+function archivePdf(blob,filename,kind,receiptNo,view){
  const api=uploadApiUrl();
- if(!api){pdfToast('PDF saved · archive skipped (set Vercel API)',null);return Promise.resolve();}
+ if(!api){pdfToast('PDF saved · archive skipped (set versy-api-base)',null);return Promise.resolve();}
  pdfToast('Archiving PDF…',null);
- const fd=new FormData();
- fd.append('file',blob,filename);
- fd.append('kind',kind||'regular');
- fd.append('receiptNo',receiptNo||'receipt');
- return fetch(api,{method:'POST',body:fd}).then(async r=>{
+ return blobToBase64(blob).then(pdfBase64=>fetch(api,{
+  method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({receiptNo:receiptNo||'receipt',kind:kind||'regular',view:view||'full',filename:filename,pdfBase64})
+ })).then(async r=>{
   let j=null;try{j=await r.json();}catch(e){}
   if(!r.ok)throw new Error((j&&j.error)||('HTTP '+r.status));
   pdfToast('PDF saved · archived',true);
@@ -1889,6 +1963,47 @@ function archivePdf(blob,filename,kind,receiptNo){
  }).catch(err=>{
   console.warn('Versy Blob archive failed',err);
   pdfToast('PDF saved · archive failed',false);
+ });
+}
+function storageTab(){
+ const api=listApiUrl();
+ openDlg('Storage 存檔',()=>{
+  const wrap=h('div',{id:'storWrap',style:'display:grid;gap:10px;min-height:120px'});
+  wrap.append(h('p',{class:'hint'},'PDFs from Save PDF, grouped by receipt number. Full, one-page and paid-in-full that share a number stay in the same folder.'));
+  if(!api){
+   wrap.append(h('p',{class:'hint'},'No API base set. Deploy this repo to Vercel with BLOB_READ_WRITE_TOKEN, or run: localStorage.setItem("versy-api-base","https://YOUR-VERCEL-URL")'));
+   return wrap;
+  }
+  const listEl=h('div',{class:'stor-list'},h('p',{class:'hint'},'Loading…'));
+  wrap.append(listEl);
+  fetch(api).then(r=>r.json()).then(data=>{
+   listEl.innerHTML='';
+   const folders=(data&&data.folders)||[];
+   if(!folders.length){listEl.append(h('p',{class:'hint'},'No archived PDFs yet. Use Save PDF to store one.'));return;}
+   folders.forEach(f=>{
+    const row=h('div',{class:'stor-folder'});
+    const btn=h('button',{type:'button',style:'width:100%;text-align:left'}, (f.receiptNo||'?')+' · '+(f.count||0)+' file(s)');
+    const kids=h('div',{class:'stor-files',style:'display:none;padding:6px 0 6px 12px'});
+    btn.onclick=()=>{
+     if(kids.style.display!=='none'){kids.style.display='none';return;}
+     kids.style.display='block';kids.textContent='Loading…';
+     fetch(listApiUrl(f.receiptNo)).then(r=>r.json()).then(d=>{
+      kids.innerHTML='';
+      const files=(d&&d.files)||[];
+      if(!files.length){kids.append(h('p',{class:'hint'},'Empty'));return;}
+      files.forEach(file=>{
+       const meta=[file.view,file.kind].filter(Boolean).join(' · ');
+       kids.append(h('div',{style:'display:flex;gap:8px;align-items:center;padding:4px 0;font-size:13px'},
+        h('a',{href:file.url,target:'_blank',rel:'noopener'},file.pathname.split('/').pop()||'PDF'),
+        h('span',{style:'color:var(--muted);font-size:11px'},meta)
+       ));
+      });
+     }).catch(e=>{kids.textContent='Failed: '+e;});
+    };
+    row.append(btn,kids);listEl.append(row);
+   });
+  }).catch(e=>{listEl.textContent='Could not load storage: '+e;});
+  return wrap;
  });
 }
 function savePdf(){
@@ -1911,7 +2026,7 @@ function savePdf(){
   setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   document.body.classList.remove('pdfing');
   if(state.receipt.current){state.receipt.printed=true;save(true);}
-  return archivePdf(blob,filename,kind,no);
+  return archivePdf(blob,filename,kind,no,small?'one-page':'full');
  }).catch(e=>{document.body.classList.remove('pdfing');alert('Could not make the PDF: '+e);});
 }
 /* ---------- shell and top bar ---------- */
@@ -1938,9 +2053,12 @@ function buildBar(){
  const bar=$('#bar');bar.innerHTML='';
  if(!editing){
   bar.append(h('span',{class:'ttl'},isPaidKind()?'Paid in full':'Purchase receipt'),h('span',{class:'ver'},VERSION),viewSeg(),h('span',{class:'sp'}),langSeg(),
-   h('button',{onclick:newReceipt},'New receipt'),h('button',{onclick:()=>{if(confirm('Clear everything typed into the form?'))renderSheet(true);}},'Clear form'),
+   h('button',{onclick:newReceipt},'New receipt'),
+   h('button',{onclick:()=>{const id='r-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);location.href='receipt.html?id='+encodeURIComponent(id)+'&kind=paid-in-full';},title:'New paid-in-full settlement receipt'},'Paid in full'),
+   h('button',{onclick:()=>{if(confirm('Clear everything typed into the form?'))renderSheet(true);}},'Clear form'),
    h('button',{onclick:toggleEdit},'✎ Edit'),
    h('button',{onclick:()=>window.print()},'Print'),h('button',{class:'pri',onclick:savePdf,title:'Save a clean PDF with no browser date, title or file path'},'⬇ Save PDF'),
+   h('button',{onclick:storageTab,title:'Browse archived PDFs by receipt number'},'Storage'),
    h('button',{title:'Settings, receipt numbers, glossary, backup',onclick:menuDialog},'⋯'));
  }else{
   bar.append(h('span',{class:'ttl'},'Editing'),h('span',{class:'ver'},VERSION),viewSeg(),h('span',{class:'st',id:'st'}),h('span',{class:'sp'}),
@@ -2150,6 +2268,8 @@ function menuDialog(){
  const mi=(label,fn,close)=>h('button',{onclick:()=>{if(close)$('#dlg').close();fn();}},label);
  openDlg('Tools',()=>h('div',{class:'menu',style:'display:grid;gap:6px'},
   mi('Settings — website, colours, text size',settingsDialog),
+  mi('Default signature — merchant sign on every receipt',signatureDialog),
+  mi('Storage — archived PDFs by receipt number',()=>storageTab(),true),
   mi('One-page receipt — paper size and parts',smallDialog),
   mi('Receipt numbers and log',receiptDialog),
   mi('Glossary — words that auto-translate',glossaryDialog),
@@ -2172,6 +2292,7 @@ function act(t){
  let focusPrefix=null;
  if(['b-up','b-down','b-del','up','down','del'].includes(a))formStash={};
  switch(a){
+  case 'set-sig':signatureDialog();return;
   case 'b-up':move(state.blocks,bi,-1);break;
   case 'b-down':move(state.blocks,bi,1);break;
   case 'b-dup':{const c=clone(b);c.id=uid();(c.rows||[]).forEach(r=>{delete r.rid;(r.options||[]).forEach(o=>{if(o.id)o.id=uid();});});delete c.strikeWhen;state.blocks.splice(bi+1,0,c);cur=c.id;break;}
@@ -2289,10 +2410,26 @@ if(window.__VERSY_RECEIPT_KIND==='paid-in-full'||(state&&state.kind==='paid-in-f
  state.kind='paid-in-full';applyPaidKindDefaults();
 }else{state.kind=state.kind||'regular';}
 shell();
+try{
+  const q=new URLSearchParams(location.search);
+  if(q.get('storage')==='1'||location.hash==='#storage'){setTimeout(()=>{try{storageTab();}catch(e){}},200);}
+}catch(e){}
 })();
 </script>
 <style>
 .title.paid-kind{border-bottom-color:#a53a2a}
+
+.msig{position:relative;min-height:44px;display:flex;align-items:flex-end;margin-bottom:2px}
+.msig-img{max-height:52px;max-width:220px;object-fit:contain;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.msig-set{position:absolute;right:0;top:0;font-size:11px;padding:2px 6px;opacity:.55}
+.msig-set:hover{opacity:1}
+.msig.sm .msig-img{max-height:40px}
+.sg .msig + .lb{margin-top:0}
+body.kind-paid section[data-bid="b13"],body.kind-paid section[data-bid="b14"]{display:none!important}
+.stor-folder>button{font:inherit;padding:8px 10px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer}
+.stor-folder>button:hover{background:var(--bg)}
+@media print{.msig-set,.no-print{display:none!important}}
+
 .paid-badge{display:inline-block;margin:0 0 8px;padding:4px 12px;border-radius:999px;background:#a53a2a;color:#fff;font-size:10pt;font-weight:700;letter-spacing:.04em;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .sm-stamp.paid-stamp{background:#a53a2a;color:#fff;border-color:#a53a2a}
 body.kind-paid .bar .ttl{color:#a53a2a}
