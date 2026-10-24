@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.33 · 26.10.24';
+const VERSION='v0.34 · 26.10.24';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -2046,7 +2046,8 @@ function localFolders(){
 }
 function localFilesFor(receiptNo){
  scrubLocalStoreDuplicates();
- return dedupeFilesByFormat(readLocalStore().files.filter(f=>f.receiptNo===receiptNo));
+ const want=String(receiptNo||'').toLowerCase();
+ return dedupeFilesByFormat(readLocalStore().files.filter(f=>String(f.receiptNo||'').toLowerCase()===want));
 }
 function storageMode(){
  return uploadApiUrl()?'blob':'local';
@@ -2062,6 +2063,8 @@ function storeReceiptPdf(blob, opts){
  const finishLocal=()=>blobToBase64(blob).then(pdfBase64=>{
   const dataUrl='data:application/pdf;base64,'+pdfBase64;
   localStorePut({receiptNo,kind,view,filename,pathname,url:dataUrl,uploadedAt:Date.now(),local:true,size:blob.size||0});
+  const verify=localFilesFor(receiptNo).some(f=>f.kind===kind&&(f.view||'full')===view);
+  if(!verify)throw new Error('Local store write failed (quota?)');
   pdfToast('Stored locally under '+receiptNo+' · '+view+'-'+kind+(api?'':' (Blob not configured)'),true);
   return {ok:true,local:true,pathname,receiptNo,kind,view};
  });
@@ -2312,9 +2315,12 @@ function splitPayInFullReceipt(opts){
     view:wantView,
     receiptNo:serial
    });
-  }).then(()=>{
-   pdfToast('Paid-in-full PDF added under '+serial,true);
-   try{if(window.__versyRefreshStorageList)window.__versyRefreshStorageList();}catch(e){}
+  }).then((res)=>{
+   if(!res){pdfToast('Paid-in-full store did not save',false);return;}
+   const n=localFilesFor(serial).filter(f=>f.kind==='paid-in-full').length;
+   if(!n){pdfToast('Saved toast but file missing — storage may be full',false);}
+   else pdfToast('Paid-in-full PDF added under '+serial+' ('+n+')',true);
+   try{if(window.__versyRefreshStorageList)window.__versyRefreshStorageList(serial);}catch(e){}
   }).catch(err=>{
    console.warn(err);
    pdfToast('Could not create Paid-in-full PDF: '+(err&&err.message||err),false);
@@ -2507,7 +2513,7 @@ function storageTab(){
    refreshStorageList(false);
   },0);
 
-  window.__versyRefreshStorageList=()=>refreshStorageList(true);
+  window.__versyRefreshStorageList=(expandNo)=>refreshStorageList(true, expandNo);
 
   function fileLabel(file){
    const view=file.view||'full', kind=file.kind||'regular';
@@ -2536,26 +2542,35 @@ function storageTab(){
     );
     const already=file.kind==='paid-in-full';
     if(!already){
-     const splitBtn=h('button',{
-      type:'button',
-      class:'stor-pay-split',
-      title:'Split a Paid-in-full stamped copy with the same serial and details'
-     },'Pay in full · split');
+     const splitBtn=document.createElement('button');
+     splitBtn.type='button';
+     splitBtn.className='stor-pay-split';
+     splitBtn.title='Split a Paid-in-full stamped copy with the same serial and details';
+     splitBtn.textContent='Pay in full - split';
+     splitBtn.setAttribute('style','margin-left:auto;background:#a53a2a;border:1px solid #a53a2a;color:#fff;font:600 11px system-ui;padding:5px 10px;border-radius:6px;cursor:pointer;white-space:nowrap');
      splitBtn.addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();
       const rowMeta=findIndexRowByReceiptNo(file.receiptNo);
       splitBtn.disabled=true;
+      splitBtn.textContent='Creating…';
       Promise.resolve(splitPayInFullReceipt({
        receiptNo:file.receiptNo,
        sourceId:rowMeta&&rowMeta.id,
        view:file.view==='one-page'?'one-page':'full',
        fromKind:file.kind,
        fromStorage:true
-      })).finally(()=>{splitBtn.disabled=false;});
+      })).finally(()=>{
+       splitBtn.disabled=false;
+       splitBtn.textContent='Pay in full - split';
+      });
      });
      row.append(splitBtn);
     }else{
-     row.append(h('span',{class:'stor-pay-done'},'Paid in full'));
+     const done=document.createElement('span');
+     done.className='stor-pay-done';
+     done.textContent='Paid in full';
+     done.setAttribute('style','margin-left:auto;color:#a53a2a;font:600 11px system-ui');
+     row.append(done);
     }
     kids.append(row);
    });
@@ -2573,7 +2588,7 @@ function storageTab(){
    if(!api){finish([]);return;}
    fetch(listApiUrl(receiptNo)).then(r=>r.json()).then(d=>finish((d&&d.files)||[])).catch(()=>finish([]));
   }
-  function refreshStorageList(preferExpandLatest){
+  function refreshStorageList(preferExpandLatest, expandReceiptNo){
    const el=$('#storList');if(!el)return;
    const api=listApiUrl();
    const locals=localFolders();
@@ -2584,12 +2599,14 @@ function storageTab(){
      el.append(h('p',{class:'hint',style:'margin:0'},'No receipts stored yet.'));
      return;
     }
-    let expandNo=null;
-    if(preferExpandLatest)expandNo=folders[0]&&folders[0].receiptNo;
+    let expandNo=expandReceiptNo||null;
+    if(!expandNo&&preferExpandLatest)expandNo=folders[0]&&folders[0].receiptNo;
+    const expandWant=String(expandNo||'').toLowerCase();
     folders.forEach(f=>{
      const row=h('div',{class:'stor-tree-row'});
-     const line=h('button',{type:'button',class:'stor-tree-line'}, (f.receiptNo||'?'));
-     const kids=h('div',{class:'stor-tree-kids',hidden:'true'});
+     const line=h('button',{type:'button',class:'stor-tree-line'}, (f.receiptNo||'?')+(f.count?(' · '+f.count):''));
+     const kids=h('div',{class:'stor-tree-kids'});
+     kids.hidden=true;
      line.addEventListener('click',()=>{
       const wasOpen=row.classList.contains('open');
       el.querySelectorAll('.stor-tree-row.open').forEach(r=>{r.classList.remove('open');const k=r.querySelector('.stor-tree-kids');if(k)k.hidden=true;});
@@ -2597,7 +2614,7 @@ function storageTab(){
      });
      row.append(line, kids);
      el.append(row);
-     if(expandNo&&f.receiptNo===expandNo){
+     if(expandWant&&String(f.receiptNo||'').toLowerCase()===expandWant){
       row.classList.add('open');kids.hidden=false;loadFilesInto(kids, f.receiptNo);
      }
     });
@@ -3064,7 +3081,7 @@ body.kind-paid section[data-bid="b13"],body.kind-paid section[data-bid="b14"]{di
 .stor-tree-kids[hidden]{display:none!important}
 
 .stor-tree-file{flex-wrap:wrap}
-.stor-pay-split{margin-left:auto;font:600 11px system-ui;padding:4px 10px;border-radius:6px;border:1px solid #a53a2a;background:#a53a2a;color:#fff;cursor:pointer;white-space:nowrap}
+.stor-pay-split{margin-left:auto!important;font:600 11px system-ui!important;padding:5px 10px!important;border-radius:6px!important;border:1px solid #a53a2a!important;background:#a53a2a!important;color:#fff!important;cursor:pointer!important;white-space:nowrap!important;display:inline-block!important;min-height:28px!important;line-height:1.2!important}
 .stor-pay-split:hover{filter:brightness(1.08)}
 .stor-pay-done{margin-left:auto;font-size:11px;color:#a53a2a;font-weight:600}
 
