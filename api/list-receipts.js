@@ -65,7 +65,14 @@ module.exports = async function handler(req, res) {
         return {
           url: b.url,
           pathname: b.pathname,
-          filename: `${meta.view || 'full'}-${meta.kind || 'regular'}-${meta.receiptNo || no}.pdf`,
+          filename: ((() => {
+          const v = meta.view || 'full';
+          const k = meta.kind || 'regular';
+          const label = k === 'paid-in-full'
+            ? (v === 'one-page' ? 'Paid-in-full-one-page' : 'Paid-in-full')
+            : (v === 'one-page' ? 'One-page-receipt' : 'Full-receipt');
+          return `${label}-${meta.receiptNo || no}.pdf`;
+        })()),
           uploadedAt: b.uploadedAt,
           size: b.size,
           view: meta.view,

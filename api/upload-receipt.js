@@ -60,7 +60,9 @@ module.exports = async function handler(req, res) {
       allowOverwrite: true,
     });
 
-    const filename = `${view}-${kind}-${receiptNo}.pdf`;
+    const filename = (kind === 'paid-in-full'
+      ? (view === 'one-page' ? 'Paid-in-full-one-page' : 'Paid-in-full')
+      : (view === 'one-page' ? 'One-page-receipt' : 'Full-receipt')) + '-' + receiptNo + '.pdf';
     return res.status(200).json({
       ok: true,
       url: blob.url,

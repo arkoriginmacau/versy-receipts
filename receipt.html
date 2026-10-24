@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.28 · 26.10.24';
+const VERSION='v0.29 · 26.10.24';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1976,7 +1976,13 @@ function stablePathname(receiptNo, view, kind){
  return 'receipts/'+receiptNo+'/'+(view||'full')+'-'+(kind||'regular')+'.pdf';
 }
 function displayPdfName(receiptNo, view, kind){
- return (view||'full')+'-'+(kind||'regular')+'-'+String(receiptNo||'receipt')+'.pdf';
+ const v=(view==='one-page'||view==='small')?'one-page':'full';
+ const k=kind==='paid-in-full'?'paid-in-full':'regular';
+ /* UI labels: Full receipt | One-page receipt | Paid in full */
+ let typeLabel;
+ if(k==='paid-in-full') typeLabel = v==='one-page' ? 'Paid-in-full-one-page' : 'Paid-in-full';
+ else typeLabel = v==='one-page' ? 'One-page-receipt' : 'Full-receipt';
+ return typeLabel+'-'+String(receiptNo||'receipt')+'.pdf';
 }
 function migrateLocalFileNames(){
  const j=readLocalStore();
@@ -2319,7 +2325,9 @@ function storageTab(){
    const view=file.view||'full', kind=file.kind||'regular';
    const no=file.receiptNo||'';
    const name=displayPdfName(no||'receipt', view, kind);
-   const bits=[view,kind].filter(Boolean);
+   const bits=[];
+   if(kind==='paid-in-full') bits.push('Paid in full');
+   bits.push(view==='one-page'?'One-page receipt':'Full receipt');
    return {name, meta:bits.join(' · ')};
   }
   function renderFiles(kids, files){
