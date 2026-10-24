@@ -9,7 +9,7 @@ Hosted **Artwork Purchase Receipt** (Versy / paperworks) for Ark’s Coffee Shop
 - Storage API (Cloudflare Worker + R2): https://versy-receipts.arkoriginmacau.workers.dev
 - Coffee Shop tile: **Versy receipts** (Paperworks)
 
-## Features (v0.36)
+## Features (v0.37)
 
 - **Regular** purchase receipt (A/B finished vs custom, bilingual, one-page view)
 - **Paid in full / 已全額支付** — same wrapper/layout/ends; settlement body; Gallery sold red `#a53a2a`
@@ -18,6 +18,7 @@ Hosted **Artwork Purchase Receipt** (Versy / paperworks) for Ark’s Coffee Shop
 - **Storage** — drop a PDF or store the current receipt; one line per receipt number; click to expand files
 - **Pay in full · split** — from a Storage row, auto-adds a stamped Paid-in-full PDF under the same number
 - **Cloud archive** on **Cloudflare R2** (Worker API). IndexedDB stays as offline fallback when cloud fails
+- **Hold 3s to delete** — sold-red blink on a Storage file line (or number line for the whole folder); releases early cancel
 
 ## Cloudflare R2 archive
 
@@ -37,6 +38,7 @@ Object keys:
 | `POST` | `/api/upload-receipt` | JSON `{ receiptNo, kind, view, pdfBase64 }` |
 | `GET` | `/api/list-receipts` | Folders (or `?no=` for files) |
 | `GET` | `/api/file?key=…` | Serve a PDF (inline) |
+| `DELETE`/`POST` | `/api/delete-receipt` | JSON `{ key }` one object, or `{ no }` whole folder |
 
 CORS allows `https://arkoriginmacau.github.io` (and localhost). Override the API base anytime:
 
@@ -65,5 +67,5 @@ Do **not** commit secrets. GitHub Pages keeps serving static HTML; the Worker ho
 
 ## Local / host notes
 
-- Template version shown in the top bar (`v0.36 · 26.10.24`)
+- Template version shown in the top bar (`v0.37 · 26.10.24`)
 - Host shell — per-id localStorage + index; `?kind=paid-in-full` for settlement receipts

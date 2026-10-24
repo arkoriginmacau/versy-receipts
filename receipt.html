@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.36 · 26.10.24';
+const VERSION='v0.37 · 26.10.24';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1955,6 +1955,12 @@ function listApiUrl(receiptNo){
  if(/\.github\.io$/i.test(location.hostname)&&!b)return '';
  return receiptNo?base+'?no='+encodeURIComponent(receiptNo):base;
 }
+function deleteApiUrl(){
+ const b=apiBase();
+ if(b)return b+'/api/delete-receipt';
+ if(/\.github\.io$/i.test(location.hostname))return '';
+ return '/api/delete-receipt';
+}
 function blobToBase64(blob){
  return new Promise((resolve,reject)=>{
   const r=new FileReader();
@@ -2021,6 +2027,82 @@ function idbDelPdf(key){
   });
  }).catch(function(){});
 }
+function localStoreDel(file){
+ const j=readLocalStore();
+ const before=j.files.length;
+ const path=file&&file.pathname;
+ const fk=formatKey(file&&file.receiptNo, file&&file.view||'full', file&&file.kind||'regular');
+ j.files=(j.files||[]).filter(f=>{
+  if(path&&f.pathname===path)return false;
+  if(formatKey(f.receiptNo,f.view||'full',f.kind||'regular')===fk)return false;
+  return true;
+ });
+ if(j.files.length!==before)writeLocalStore(j);
+ return before-j.files.length;
+}
+function localStoreDelFolder(receiptNo){
+ const j=readLocalStore();
+ const want=String(receiptNo||'').toLowerCase();
+ const removed=(j.files||[]).filter(f=>String(f.receiptNo||'').toLowerCase()===want);
+ j.files=(j.files||[]).filter(f=>String(f.receiptNo||'').toLowerCase()!==want);
+ writeLocalStore(j);
+ return removed;
+}
+function remoteKeysFor(file){
+ const keys=[];
+ if(!file)return keys;
+ const add=k=>{k=String(k||'').replace(/^\/+/, '');if(k.startsWith('receipts/')&&!k.includes('..')&&keys.indexOf(k)<0)keys.push(k);};
+ add(file.pathname);add(file.key);
+ const no=file.receiptNo;
+ if(no){
+  add('receipts/'+no+'/'+displayPdfName(no, file.view||'full', file.kind||'regular'));
+  add(stablePathname(no, file.view||'full', file.kind||'regular'));
+ }
+ return keys;
+}
+function deleteStoredPdf(file){
+ file=file||{};
+ const keys=remoteKeysFor(file);
+ const api=deleteApiUrl();
+ const jobs=[];
+ if(api){
+  keys.forEach(function(key){
+   jobs.push(fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:key})}).then(async r=>{
+    let j=null;try{j=await r.json();}catch(e){}
+    if(!r.ok)throw new Error((j&&j.error)||('HTTP '+r.status));
+    return j;
+   }).catch(function(err){console.warn('Cloud delete failed',key,err);return null;}));
+  });
+ }
+ /* always clear local mirror */
+ localStoreDel(file);
+ keys.forEach(function(k){jobs.push(idbDelPdf(k));});
+ return Promise.all(jobs).then(function(){
+  pdfToast('Deleted · '+(file.filename||keys[0]||'file'),true);
+  return {ok:true};
+ });
+}
+function deleteStoredFolder(receiptNo){
+ const no=String(receiptNo||'').trim();
+ if(!no)return Promise.resolve({ok:false});
+ const api=deleteApiUrl();
+ const localFiles=localFilesFor(no);
+ const jobs=[];
+ if(api){
+  jobs.push(fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({no:no})}).then(async r=>{
+   let j=null;try{j=await r.json();}catch(e){}
+   if(!r.ok)throw new Error((j&&j.error)||('HTTP '+r.status));
+   return j;
+  }).catch(function(err){console.warn('Cloud folder delete failed',err);return null;}));
+ }
+ localFiles.forEach(function(f){if(f.pathname)jobs.push(idbDelPdf(f.pathname));});
+ localStoreDelFolder(no);
+ return Promise.all(jobs).then(function(){
+  pdfToast('Deleted folder · '+no,true);
+  return {ok:true};
+ });
+}
+
 function formatKey(receiptNo, view, kind){
  return String(receiptNo||'').toLowerCase()+'|'+String(view||'full')+'|'+String(kind||'regular');
 }
@@ -2575,9 +2657,10 @@ function storageTab(){
   const wrap=h('div',{id:'storWrap',style:'display:grid;gap:12px;min-height:160px'});
   wrap.append(h('p',{class:'hint'},'Drop a receipt PDF here. Files are grouped by receipt number — click a number to see its files.'));
 
-  if(mode!=='blob'){
-   wrap.append(h('p',{class:'stor-quiet',style:'margin:0;font-size:11px;color:var(--muted)'},'Stored in this browser until Blob is linked.'));
-  }
+  const quiet=mode==='cloud'
+   ? 'Cloudflare R2 · hold a file line 3s to delete (sold red blink). This browser mirrors offline.'
+   : 'Stored in this browser · hold a file line 3s to delete (sold red blink).';
+  wrap.append(h('p',{class:'stor-quiet',style:'margin:0;font-size:11px;color:var(--muted)'},quiet));
 
   const drop=h('div',{class:'stor-drop',id:'storDrop'});
   drop.innerHTML='<div class="stor-drop-inner"><div class="stor-drop-title">⬇ Drop receipt PDF here</div><div class="stor-drop-sub">拖放 PDF 到這裡 · same number → same folder</div></div>';
@@ -2617,7 +2700,47 @@ function storageTab(){
    bits.push(view==='one-page'?'One-page receipt':'Full receipt');
    return {name, meta:bits.join(' · ')};
   }
-  function renderFiles(kids, files){
+  function bindHoldDelete(el, onArmed, titleHint){
+   /* Hold ~3s with sold-red blink (same family as .xhold strikes). Release early cancels. */
+   let timer=null, armed=false;
+   const HOLD_MS=3000;
+   const clear=()=>{
+    if(timer){clearTimeout(timer);timer=null;}
+    el.classList.remove('stor-xhold');
+    armed=false;
+   };
+   const start=(e)=>{
+    if(e.button!=null&&e.button!==0)return;
+    if(e.target&&e.target.closest&&e.target.closest('button.stor-pay-split,a.stor-file-link')){
+     /* allow link/split to work; hold only on the row chrome / meta / empty space — actually hold on whole row except split button */
+    }
+    if(e.target&&e.target.closest&&e.target.closest('button.stor-pay-split'))return;
+    clear();
+    el.classList.add('stor-xhold');
+    el.title=titleHint||'Hold 3s to delete';
+    timer=setTimeout(()=>{
+     timer=null;armed=true;
+     el.classList.remove('stor-xhold');
+     try{onArmed();}catch(err){console.warn(err);}
+    },HOLD_MS);
+   };
+   const end=(e)=>{
+    if(armed){
+     if(e){e.preventDefault();e.stopPropagation();}
+     armed=false;
+     return;
+    }
+    clear();
+   };
+   el.addEventListener('pointerdown',start);
+   el.addEventListener('pointerup',end);
+   el.addEventListener('pointerleave',()=>clear());
+   el.addEventListener('pointercancel',()=>clear());
+   el.addEventListener('click',e=>{
+    if(armed){e.preventDefault();e.stopPropagation();armed=false;}
+   },true);
+  }
+  function renderFiles(kids, files, receiptNo){
    kids.innerHTML='';
    if(!files||!files.length){
     kids.append(h('div',{class:'stor-tree-empty'},'No files'));
@@ -2626,6 +2749,7 @@ function storageTab(){
    files.forEach(file=>{
     const lab=fileLabel(file);
     const row=h('div',{class:'stor-tree-file'});
+    row.title='Hold 3s to delete · click name to open';
     const link=h('a',{href:file.url||'#',target:'_blank',rel:'noopener noreferrer',class:'stor-file-link',title:'Open PDF'},lab.name);
     link.addEventListener('click',e=>openStoredPdf(file,e));
     row.append(
@@ -2665,6 +2789,13 @@ function storageTab(){
      done.setAttribute('style','margin-left:auto;color:#a53a2a;font:600 11px system-ui');
      row.append(done);
     }
+    bindHoldDelete(row, ()=>{
+     deleteStoredPdf(file).then(()=>{
+      const remaining=localFilesFor(file.receiptNo);
+      /* refresh: if zero files, drop the number line */
+      refreshStorageList(true, remaining.length?file.receiptNo:null);
+     });
+    }, 'Hold 3s to delete this PDF');
     kids.append(row);
    });
   }
@@ -2676,7 +2807,7 @@ function storageTab(){
    const finish=(remote)=>{
     const stamped=(remote||[]).map(f=>Object.assign({},f,{receiptNo:f.receiptNo||receiptNo}));
     const all=[...(local||[]),...stamped];
-    renderFiles(kids, dedupeFilesByFormat(all));
+    renderFiles(kids, dedupeFilesByFormat(all), receiptNo);
    };
    if(!api){finish([]);return;}
    fetch(listApiUrl(receiptNo)).then(r=>r.json()).then(d=>finish((d&&d.files)||[])).catch(()=>finish([]));
@@ -2698,13 +2829,20 @@ function storageTab(){
     folders.forEach(f=>{
      const row=h('div',{class:'stor-tree-row'});
      const line=h('button',{type:'button',class:'stor-tree-line'}, (f.receiptNo||'?')+(f.count?(' · '+f.count):''));
+     line.title='Click to expand · hold 3s to delete all PDFs for this number';
      const kids=h('div',{class:'stor-tree-kids'});
      kids.hidden=true;
-     line.addEventListener('click',()=>{
+     let folderArmed=false;
+     line.addEventListener('click',e=>{
+      if(folderArmed){folderArmed=false;e.preventDefault();e.stopPropagation();return;}
       const wasOpen=row.classList.contains('open');
       el.querySelectorAll('.stor-tree-row.open').forEach(r=>{r.classList.remove('open');const k=r.querySelector('.stor-tree-kids');if(k)k.hidden=true;});
       if(!wasOpen){row.classList.add('open');kids.hidden=false;loadFilesInto(kids, f.receiptNo);}
      });
+     bindHoldDelete(line, ()=>{
+      folderArmed=true;
+      deleteStoredFolder(f.receiptNo).then(()=>refreshStorageList(false));
+     }, 'Hold 3s to delete all PDFs under '+f.receiptNo);
      row.append(line, kids);
      el.append(row);
      if(expandWant&&String(f.receiptNo||'').toLowerCase()===expandWant){
@@ -3183,6 +3321,9 @@ body.kind-paid section[data-bid="b13"],body.kind-paid section[data-bid="b14"]{di
 .stor-tree-meta{color:var(--muted);font-size:11px}
 .stor-tree-empty{font-size:12px;color:var(--muted);padding-left:14px}
 .stor-quiet{line-height:1.35}
+.stor-xhold{animation:storSoldBlink .45s ease-in-out infinite;background:rgba(165,58,42,.22)!important;outline:2px solid #a53a2a;outline-offset:-2px;color:#a53a2a!important;user-select:none;-webkit-user-select:none}
+.stor-tree-file.stor-xhold .stor-file-link,.stor-tree-file.stor-xhold .stor-tree-meta,.stor-tree-line.stor-xhold{color:#a53a2a!important}
+@keyframes storSoldBlink{0%,100%{background:rgba(165,58,42,.12);box-shadow:inset 0 0 0 0 rgba(165,58,42,.0)}50%{background:rgba(165,58,42,.38);box-shadow:inset 0 0 0 2px #a53a2a}}
 .stor-actions button{font:inherit;font-size:12px;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:#fff;cursor:pointer}
 .stor-actions button.pri{color:#fff}
 

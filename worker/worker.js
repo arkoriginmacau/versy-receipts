@@ -5,10 +5,11 @@
  *   POST /api/upload-receipt
  *   GET  /api/list-receipts[?no=]
  *   GET  /api/file?key=...   (or GET /file/{key})
+ *   DELETE|POST /api/delete-receipt  { key } or { no }
  *   GET  /api/health
  */
 
-const CORS_METHODS = 'GET, POST, OPTIONS';
+const CORS_METHODS = 'GET, POST, DELETE, OPTIONS';
 const CORS_HEADERS = 'Content-Type, Authorization';
 
 function allowedOrigins(env) {
@@ -262,6 +263,54 @@ async function handleFile(request, env) {
   return new Response(obj.body, { status: 200, headers });
 }
 
+
+async function handleDelete(request, env) {
+  if (!env.RECEIPTS) return json(request, env, 503, { error: 'R2 binding RECEIPTS missing' });
+
+  let body = {};
+  const u = new URL(request.url);
+  // Accept JSON body and/or query params
+  if (request.method === 'POST' || request.method === 'DELETE') {
+    const ct = (request.headers.get('Content-Type') || '').toLowerCase();
+    if (ct.includes('application/json')) {
+      try {
+        body = await request.json();
+      } catch {
+        body = {};
+      }
+    }
+  }
+  let key = String((body && body.key) || u.searchParams.get('key') || '').replace(/^\/+/, '');
+  let noRaw = (body && (body.no || body.receiptNo)) || u.searchParams.get('no') || u.searchParams.get('receiptNo') || '';
+  const hasNo = !!String(noRaw || '').trim();
+
+  if (key) {
+    if (!key.startsWith('receipts/') || key.includes('..')) {
+      return json(request, env, 400, { error: 'invalid key' });
+    }
+    await env.RECEIPTS.delete(key);
+    return json(request, env, 200, { ok: true, deleted: [key], count: 1, storage: 'r2' });
+  }
+
+  if (hasNo) {
+    const no = safeNo(noRaw);
+    const prefix = `receipts/${no}/`;
+    if (prefix.includes('..')) {
+      return json(request, env, 400, { error: 'invalid no' });
+    }
+    const objects = await listPrefix(env.RECEIPTS, prefix);
+    const deleted = [];
+    for (const o of objects) {
+      if (!o.key.startsWith('receipts/') || o.key.includes('..')) continue;
+      await env.RECEIPTS.delete(o.key);
+      deleted.push(o.key);
+    }
+    return json(request, env, 200, { ok: true, deleted, count: deleted.length, receiptNo: no, storage: 'r2' });
+  }
+
+  return json(request, env, 400, { error: 'key or no required' });
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') {
@@ -287,6 +336,9 @@ export default {
       }
       if ((path === '/api/file' || path.startsWith('/api/file/') || path.startsWith('/file/')) && request.method === 'GET') {
         return await handleFile(request, env);
+      }
+      if (path === '/api/delete-receipt' && (request.method === 'DELETE' || request.method === 'POST')) {
+        return await handleDelete(request, env);
       }
       return json(request, env, 404, { error: 'not found', path });
     } catch (err) {
