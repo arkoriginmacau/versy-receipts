@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.32 · 26.10.24';
+const VERSION='v0.33 · 26.10.24';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -2103,15 +2103,28 @@ function makeReceiptPdfBlob(forceView){
  const no=(state.receipt&&state.receipt.current)||'receipt';
  const kind=receiptKind();
  const vlabel=small?'one-page':'full';
- const filename=no+(small?'-one-page':'')+(kind==='paid-in-full'?'-paid-in-full':'')+'.pdf';
+ const filename=displayPdfName(no, vlabel, kind);
  document.body.classList.add('pdfing');
- return html2pdf().set(pdfWorkerOpts(paper,filename)).from(sh).outputPdf('blob').then(blob=>{
-  document.body.classList.remove('pdfing');
-  if(wasEditing){editing=true;}
-  if(forceView&&wasView!==view){view=wasView;buildBar();renderSheet();}
-  else if(wasEditing){buildBar();renderSheet();}
-  return {blob,filename,kind,receiptNo:no,view:vlabel};
- }).catch(e=>{document.body.classList.remove('pdfing');view=wasView;editing=wasEditing;buildBar();renderSheet();throw e;});
+ /* html2pdf returns a Worker thenable — wrap in a native Promise (avoids n.resolve is not a function) */
+ return new Promise(function(resolve, reject){
+  try{
+   html2pdf().set(pdfWorkerOpts(paper,filename)).from(sh).outputPdf('blob').then(function(blob){
+    document.body.classList.remove('pdfing');
+    if(wasEditing){editing=true;}
+    if(forceView&&wasView!==view){view=wasView;buildBar();renderSheet();}
+    else if(wasEditing){buildBar();renderSheet();}
+    resolve({blob:blob,filename:filename,kind:kind,receiptNo:no,view:vlabel});
+   }, function(e){
+    document.body.classList.remove('pdfing');
+    view=wasView;editing=wasEditing;buildBar();renderSheet();
+    reject(e);
+   });
+  }catch(e){
+   document.body.classList.remove('pdfing');
+   view=wasView;editing=wasEditing;try{buildBar();renderSheet();}catch(err){}
+   reject(e);
+  }
+ });
 }
 function storeCurrentReceiptToStorage(forceView){
  return makeReceiptPdfBlob(forceView).then(r=>{
@@ -2319,6 +2332,14 @@ function renderPaidPdfFromState(paidState, forceView){
   formStash:Object.assign({},formStash),
   kind:window.__VERSY_RECEIPT_KIND
  };
+ const restore=function(){
+  state=bak.state;
+  view=bak.view;
+  editing=bak.editing;
+  formStash=bak.formStash;
+  window.__VERSY_RECEIPT_KIND=bak.kind||(state&&state.kind)||'regular';
+  try{buildBar();renderSheet();}catch(e){}
+ };
  try{
   state=paidState;
   editing=false;
@@ -2328,18 +2349,15 @@ function renderPaidPdfFromState(paidState, forceView){
   try{applyPaidKindDefaults();}catch(e){}
   buildBar();
   renderSheet();
-  return makeReceiptPdfBlob(view==='small'?'one-page':'full').finally(()=>{
-   state=bak.state;
-   view=bak.view;
-   editing=bak.editing;
-   formStash=bak.formStash;
-   window.__VERSY_RECEIPT_KIND=bak.kind||(state&&state.kind)||'regular';
-   try{buildBar();renderSheet();}catch(e){}
+  return makeReceiptPdfBlob(view==='small'?'one-page':'full').then(function(r){
+   restore();
+   return r;
+  }, function(err){
+   restore();
+   return Promise.reject(err);
   });
  }catch(err){
-  state=bak.state;view=bak.view;editing=bak.editing;formStash=bak.formStash;
-  window.__VERSY_RECEIPT_KIND=bak.kind||'regular';
-  try{buildBar();renderSheet();}catch(e){}
+  restore();
   return Promise.reject(err);
  }
 }
