@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.34 · 26.10.24';
+const VERSION='v0.35 · 26.10.24';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1967,10 +1967,62 @@ function readLocalStore(){
  try{const raw=localStorage.getItem(localStoreKey());const j=raw?JSON.parse(raw):{files:[]};if(!Array.isArray(j.files))j.files=[];return j;}catch(e){return {files:[]};}
 }
 function writeLocalStore(j){
- try{localStorage.setItem(localStoreKey(),JSON.stringify(j));}catch(e){throw new Error('Browser storage full — could not keep PDF locally');}
+ /* metadata only — never put PDF data URLs here (quota). Strip any accidental url payloads. */
+ const light={files:(j.files||[]).map(f=>{
+  const o=Object.assign({},f);
+  if(o.url&&String(o.url).indexOf('data:')===0){o.url='idb:'+(o.pathname||o.filename||Math.random());}
+  return o;
+ })};
+ try{localStorage.setItem(localStoreKey(),JSON.stringify(light));}catch(e){
+  throw new Error('Browser storage full — clear old receipts or free space');
+ }
+}
+const IDB_NAME='versy-storage-pdfs-v1', IDB_STORE='pdfs';
+function idbOpen(){
+ return new Promise(function(resolve,reject){
+  try{
+   const req=indexedDB.open(IDB_NAME,1);
+   req.onupgradeneeded=function(){
+    const db=req.result;
+    if(!db.objectStoreNames.contains(IDB_STORE))db.createObjectStore(IDB_STORE);
+   };
+   req.onsuccess=function(){resolve(req.result);};
+   req.onerror=function(){reject(req.error||new Error('IndexedDB open failed'));};
+  }catch(e){reject(e);}
+ });
+}
+function idbPutPdf(key, blob){
+ return idbOpen().then(function(db){
+  return new Promise(function(resolve,reject){
+   const tx=db.transaction(IDB_STORE,'readwrite');
+   tx.objectStore(IDB_STORE).put(blob, key);
+   tx.oncomplete=function(){resolve(key);};
+   tx.onerror=function(){reject(tx.error||new Error('IndexedDB write failed'));};
+  });
+ });
+}
+function idbGetPdf(key){
+ return idbOpen().then(function(db){
+  return new Promise(function(resolve,reject){
+   const tx=db.transaction(IDB_STORE,'readonly');
+   const req=tx.objectStore(IDB_STORE).get(key);
+   req.onsuccess=function(){resolve(req.result||null);};
+   req.onerror=function(){reject(req.error||new Error('IndexedDB read failed'));};
+  });
+ });
+}
+function idbDelPdf(key){
+ return idbOpen().then(function(db){
+  return new Promise(function(resolve,reject){
+   const tx=db.transaction(IDB_STORE,'readwrite');
+   tx.objectStore(IDB_STORE).delete(key);
+   tx.oncomplete=function(){resolve();};
+   tx.onerror=function(){reject(tx.error);};
+  });
+ }).catch(function(){});
 }
 function formatKey(receiptNo, view, kind){
- return String(receiptNo||'')+'|'+String(view||'full')+'|'+String(kind||'regular');
+ return String(receiptNo||'').toLowerCase()+'|'+String(view||'full')+'|'+String(kind||'regular');
 }
 function stablePathname(receiptNo, view, kind){
  return 'receipts/'+receiptNo+'/'+(view||'full')+'-'+(kind||'regular')+'.pdf';
@@ -1978,24 +2030,10 @@ function stablePathname(receiptNo, view, kind){
 function displayPdfName(receiptNo, view, kind){
  const v=(view==='one-page'||view==='small')?'one-page':'full';
  const k=kind==='paid-in-full'?'paid-in-full':'regular';
- /* UI labels: Full receipt | One-page receipt | Paid in full */
  let typeLabel;
  if(k==='paid-in-full') typeLabel = v==='one-page' ? 'Paid-in-full-one-page' : 'Paid-in-full';
  else typeLabel = v==='one-page' ? 'One-page-receipt' : 'Full-receipt';
  return typeLabel+'-'+String(receiptNo||'receipt')+'.pdf';
-}
-function migrateLocalFileNames(){
- const j=readLocalStore();
- let changed=false;
- j.files=(j.files||[]).map(f=>{
-  const view=f.view||'full', kind=f.kind||'regular', no=f.receiptNo||'receipt';
-  const want=displayPdfName(no, view, kind);
-  const wantPath=stablePathname(no, view, kind);
-  if(f.filename!==want||f.pathname!==wantPath){changed=true;return Object.assign({},f,{filename:want,pathname:wantPath});}
-  return f;
- });
- if(changed)writeLocalStore(j);
- return j;
 }
 function dedupeFilesByFormat(files){
  const best=new Map();
@@ -2007,17 +2045,38 @@ function dedupeFilesByFormat(files){
  });
  return [...best.values()].sort((a,b)=>(+b.uploadedAt||0)-(+a.uploadedAt||0));
 }
+function migrateLocalFileNames(){
+ const j=readLocalStore();
+ let changed=false;
+ j.files=(j.files||[]).map(f=>{
+  const view=f.view||'full', kind=f.kind||'regular', no=f.receiptNo||'receipt';
+  const want=displayPdfName(no, view, kind);
+  const wantPath=stablePathname(no, view, kind);
+  const next=Object.assign({},f,{filename:want,pathname:wantPath});
+  if(next.url&&String(next.url).indexOf('data:')===0){
+   /* drop heavy data URLs from metadata — PDF should live in IndexedDB */
+   next.url='idb:'+wantPath;
+   changed=true;
+  }
+  if(f.filename!==want||f.pathname!==wantPath)changed=true;
+  return next;
+ });
+ if(changed)writeLocalStore(j);
+ return j;
+}
 function scrubLocalStoreDuplicates(){
  migrateLocalFileNames();
  const j=readLocalStore();
  const before=j.files.length;
  j.files=dedupeFilesByFormat(j.files);
- // after dedupe, normalize names again
  let renamed=false;
  j.files=j.files.map(f=>{
   const filename=displayPdfName(f.receiptNo, f.view||'full', f.kind||'regular');
   const pathname=stablePathname(f.receiptNo, f.view||'full', f.kind||'regular');
-  if(f.filename!==filename||f.pathname!==pathname){renamed=true;return Object.assign({},f,{filename,pathname});}
+  let url=f.url;
+  if(url&&String(url).indexOf('data:')===0){url='idb:'+pathname;renamed=true;}
+  if(!url){url='idb:'+pathname;renamed=true;}
+  if(f.filename!==filename||f.pathname!==pathname||f.url!==url){renamed=true;return Object.assign({},f,{filename,pathname,url});}
   return f;
  });
  if(j.files.length!==before||renamed)writeLocalStore(j);
@@ -2029,6 +2088,7 @@ function localStorePut(entry){
  entry.view=view;entry.kind=kind;
  entry.pathname=stablePathname(entry.receiptNo, view, kind);
  entry.filename=displayPdfName(entry.receiptNo, view, kind);
+ if(!entry.url||String(entry.url).indexOf('data:')===0)entry.url='idb:'+entry.pathname;
  j.files=j.files.filter(f=>formatKey(f.receiptNo,f.view,f.kind)!==formatKey(entry.receiptNo,view,kind));
  j.files.unshift(entry);
  j.files=j.files.slice(0,80);
@@ -2039,8 +2099,13 @@ function localFolders(){
  scrubLocalStoreDuplicates();
  const map=new Map();
  readLocalStore().files.forEach(f=>{
-  const row=map.get(f.receiptNo)||{receiptNo:f.receiptNo,count:0,latest:0,local:true};
-  row.count++;row.latest=Math.max(row.latest,f.uploadedAt||0);map.set(f.receiptNo,row);
+  const no=f.receiptNo||'?';
+  const key=String(no).toLowerCase();
+  const row=map.get(key)||{receiptNo:no,count:0,latest:0,local:true};
+  row.count++;row.latest=Math.max(row.latest,f.uploadedAt||0);
+  /* prefer original casing that looks like ARK- */
+  if(/^ARK-/i.test(no)&&!/^ARK-/i.test(row.receiptNo))row.receiptNo=no;
+  map.set(key,row);
  });
  return [...map.values()].sort((a,b)=>(b.latest||0)-(a.latest||0));
 }
@@ -2060,28 +2125,34 @@ function storeReceiptPdf(blob, opts){
  const pathname=stablePathname(receiptNo, view, kind);
  const filename=displayPdfName(receiptNo, view, kind);
  const api=uploadApiUrl();
- const finishLocal=()=>blobToBase64(blob).then(pdfBase64=>{
-  const dataUrl='data:application/pdf;base64,'+pdfBase64;
-  localStorePut({receiptNo,kind,view,filename,pathname,url:dataUrl,uploadedAt:Date.now(),local:true,size:blob.size||0});
-  const verify=localFilesFor(receiptNo).some(f=>f.kind===kind&&(f.view||'full')===view);
-  if(!verify)throw new Error('Local store write failed (quota?)');
-  pdfToast('Stored locally under '+receiptNo+' · '+view+'-'+kind+(api?'':' (Blob not configured)'),true);
-  return {ok:true,local:true,pathname,receiptNo,kind,view};
- });
+ const pdfBlob=(blob&&blob.type==='application/pdf')?blob:new Blob([blob],{type:'application/pdf'});
+ const finishLocal=function(){
+  return idbPutPdf(pathname, pdfBlob).then(function(){
+   localStorePut({receiptNo:receiptNo,kind:kind,view:view,filename:filename,pathname:pathname,url:'idb:'+pathname,uploadedAt:Date.now(),local:true,size:pdfBlob.size||0});
+   const verify=localFilesFor(receiptNo).some(function(f){return f.kind===kind&&(f.view||'full')===view;});
+   if(!verify)throw new Error('Metadata write failed');
+   return idbGetPdf(pathname).then(function(got){
+    if(!got)throw new Error('IndexedDB write failed');
+    pdfToast('Stored under '+receiptNo+' · '+filename+(api?'':' (local)'),true);
+    return {ok:true,local:true,pathname:pathname,receiptNo:receiptNo,kind:kind,view:view,filename:filename};
+   });
+  });
+ };
  if(!api){
-  pdfToast('Saving in this browser (no Blob API)…',null);
-  return finishLocal().catch(err=>{pdfToast(String(err.message||err),false);return null;});
+  pdfToast('Saving in this browser…',null);
+  return finishLocal().catch(function(err){pdfToast(String(err&&err.message||err),false);return null;});
  }
  pdfToast('Storing on Blob…',null);
- return blobToBase64(blob).then(pdfBase64=>fetch(api,{
-  method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({receiptNo,kind,view,filename,pdfBase64})
- })).then(async r=>{
+ return blobToBase64(pdfBlob).then(function(pdfBase64){
+  return fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({receiptNo:receiptNo,kind:kind,view:view,filename:filename,pdfBase64:pdfBase64})});
+ }).then(async function(r){
   let j=null;try{j=await r.json();}catch(e){}
   if(!r.ok)throw new Error((j&&j.error)||('HTTP '+r.status));
+  /* also mirror metadata+blob locally so Storage list works offline */
+  try{await idbPutPdf(pathname, pdfBlob);localStorePut({receiptNo:receiptNo,kind:kind,view:view,filename:filename,pathname:pathname,url:(j&&j.url)||('idb:'+pathname),uploadedAt:Date.now(),local:false,size:pdfBlob.size||0});}catch(e){}
   pdfToast('Stored on Blob · '+receiptNo,true);
-  return j;
- }).catch(err=>{
+  return j||{ok:true,pathname:pathname,receiptNo:receiptNo,kind:kind,view:view};
+ }).catch(function(err){
   console.warn('Blob store failed, falling back to local',err);
   pdfToast('Blob failed — saving locally…',null);
   return finishLocal();
@@ -2461,7 +2532,7 @@ function bindStorageDnD(dropEl, fallbackNo, onDone){
 }
 function openStoredPdf(file, ev){
  if(ev){ev.preventDefault();ev.stopPropagation();}
- const openBlob=(blob)=>{
+ const openBlob=function(blob){
   const pdf=(blob&&blob.type==='application/pdf')?blob:new Blob([blob],{type:'application/pdf'});
   const url=URL.createObjectURL(pdf);
   const w=window.open(url,'_blank','noopener');
@@ -2470,15 +2541,25 @@ function openStoredPdf(file, ev){
    a.href=url;a.target='_blank';a.rel='noopener noreferrer';
    document.body.appendChild(a);a.click();a.remove();
   }
-  setTimeout(()=>{try{URL.revokeObjectURL(url);}catch(e){}},120000);
+  setTimeout(function(){try{URL.revokeObjectURL(url);}catch(e){}},120000);
  };
  const src=file&&file.url;
- if(!src){alert('No PDF data for this file.');return false;}
- if(/^data:/i.test(src)){
-  fetch(src).then(r=>r.blob()).then(openBlob).catch(e=>alert('Could not open PDF: '+e));
+ const key=(file&&file.pathname)||(src&&String(src).indexOf('idb:')===0?String(src).slice(4):'');
+ if(key&&(!src||String(src).indexOf('idb:')===0||String(src).indexOf('data:')===0)){
+  idbGetPdf(key).then(function(blob){
+   if(blob){openBlob(blob);return;}
+   if(src&&String(src).indexOf('data:')===0){
+    return fetch(src).then(function(r){return r.blob();}).then(openBlob);
+   }
+   alert('PDF not found in local storage.');
+  }).catch(function(e){alert('Could not open PDF: '+e);});
   return false;
  }
- /* remote https Blob URL — open for viewing, never download/print */
+ if(!src){alert('No PDF data for this file.');return false;}
+ if(/^data:/i.test(src)){
+  fetch(src).then(function(r){return r.blob();}).then(openBlob).catch(function(e){alert('Could not open PDF: '+e);});
+  return false;
+ }
  const w=window.open(src,'_blank','noopener');
  if(!w){
   const a=document.createElement('a');
@@ -2509,8 +2590,20 @@ function storageTab(){
   setTimeout(()=>{
    const zone=$('#storDrop')||drop;
    bindStorageDnD(zone, curNo, ()=>refreshStorageList(true));
-   /* also allow dropping the current sheet onto the zone */
    refreshStorageList(false);
+   /* migrate any leftover data: URLs into IndexedDB to free quota */
+   try{
+    const j=readLocalStore();
+    (j.files||[]).forEach(function(f){
+     if(f.url&&String(f.url).indexOf('data:')===0&&f.pathname){
+      fetch(f.url).then(function(r){return r.blob();}).then(function(b){
+       return idbPutPdf(f.pathname,b).then(function(){
+        f.url='idb:'+f.pathname;writeLocalStore(j);
+       });
+      }).catch(function(){});
+     }
+    });
+   }catch(e){}
   },0);
 
   window.__versyRefreshStorageList=(expandNo)=>refreshStorageList(true, expandNo);
