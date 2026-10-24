@@ -2,8 +2,7 @@
 
 Hosted **Artwork Purchase Receipt** (Versy / paperworks) for Ark’s Coffee Shop launcher.
 
-- Live entry: `/` (same as `/receipt.html`)
-- Source template version is embedded in the HTML (`VERSION`).
-- Separate from Videll console tabs and from Ark Gallery / Project LIA tiles.
-
-Coffee Shop adds this as its own `admin_links` row only — do not merge into existing tiles.
+- `/` — recent receipts list + New receipt
+- `/receipt.html?id=…` — full v0.19 form (A/B, bilingual, PDF, persist per id)
+- Template: Versy `receipt-latest.html` v0.19 · 26.10.17
+- Coffee Shop tile: **Versy receipts** (subtitle Paperworks) — separate `admin_links` row only
