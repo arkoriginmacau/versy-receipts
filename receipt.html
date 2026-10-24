@@ -1496,7 +1496,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.24 · 26.10.24';
+const VERSION='v0.25 · 26.10.24';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -2198,6 +2198,34 @@ function bindStorageDnD(dropEl, fallbackNo, onDone){
   },false);
  }
 }
+function openStoredPdf(file, ev){
+ if(ev){ev.preventDefault();ev.stopPropagation();}
+ const openBlob=(blob)=>{
+  const pdf=(blob&&blob.type==='application/pdf')?blob:new Blob([blob],{type:'application/pdf'});
+  const url=URL.createObjectURL(pdf);
+  const w=window.open(url,'_blank','noopener');
+  if(!w){
+   const a=document.createElement('a');
+   a.href=url;a.target='_blank';a.rel='noopener noreferrer';
+   document.body.appendChild(a);a.click();a.remove();
+  }
+  setTimeout(()=>{try{URL.revokeObjectURL(url);}catch(e){}},120000);
+ };
+ const src=file&&file.url;
+ if(!src){alert('No PDF data for this file.');return false;}
+ if(/^data:/i.test(src)){
+  fetch(src).then(r=>r.blob()).then(openBlob).catch(e=>alert('Could not open PDF: '+e));
+  return false;
+ }
+ /* remote https Blob URL — open for viewing, never download/print */
+ const w=window.open(src,'_blank','noopener');
+ if(!w){
+  const a=document.createElement('a');
+  a.href=src;a.target='_blank';a.rel='noopener noreferrer';
+  document.body.appendChild(a);a.click();a.remove();
+ }
+ return false;
+}
 function storageTab(){
  const curNo=(state.receipt&&state.receipt.current)||'';
  const mode=storageMode();
@@ -2240,9 +2268,11 @@ function storageTab(){
    files.forEach(file=>{
     const lab=fileLabel(file);
     const row=h('div',{class:'stor-tree-file'});
+    const link=h('a',{href:file.url||'#',target:'_blank',rel:'noopener noreferrer',class:'stor-file-link',title:'Open PDF'},lab.name);
+    link.addEventListener('click',e=>openStoredPdf(file,e));
     row.append(
      h('span',{class:'stor-tree-branch'},''),
-     h('a',{href:file.url,target:'_blank',rel:'noopener',download:file.filename||lab.name},lab.name),
+     link,
      lab.meta?h('span',{class:'stor-tree-meta'},lab.meta):null
     );
     kids.append(row);
