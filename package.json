@@ -1,6 +1,6 @@
 {
   "name": "versy-receipts",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "Hosted Versy (paperworks) Artwork Purchase Receipt for Coffee Shop launcher",
   "dependencies": {

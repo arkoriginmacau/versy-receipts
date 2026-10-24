@@ -12,17 +12,23 @@
     let kind = (q.get('kind')||'').toLowerCase();
     if(kind === 'paid' || kind === 'paidinfull' || kind === 'paid_in_full') kind = 'paid-in-full';
     if(kind !== 'paid-in-full') kind = 'regular';
+    let view = (q.get('view')||'').toLowerCase();
+    if(view === 'one-page' || view === 'small' || view === 'onepage') view = 'one-page';
+    else if(view === 'full') view = 'full';
+    else view = '';
     if(!id){
       id = 'r-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8);
       q.set('id', id);
       if(kind === 'paid-in-full') q.set('kind', kind);
+      if(view) q.set('view', view);
       history.replaceState(null, '', location.pathname + '?' + q.toString() + location.hash);
     }
-    return { id, kind };
+    return { id, kind, view };
   }
   const boot = ridAndKind();
   window.__VERSY_RECEIPT_ID = boot.id;
   window.__VERSY_RECEIPT_KIND = boot.kind;
+  window.__VERSY_RECEIPT_VIEW = boot.view;
   window.__VERSY_INDEX_KEY = INDEX_KEY;
   window.__VERSY_HOST = '0.2';
   window.__versyUpsertIndex = function(meta){
@@ -1490,7 +1496,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.21 · 26.10.24';
+const VERSION='v0.22 · 26.10.24';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1948,86 +1954,260 @@ function blobToBase64(blob){
   r.onerror=reject;r.readAsDataURL(blob);
  });
 }
-function archivePdf(blob,filename,kind,receiptNo,view){
+function storeReceiptPdf(blob, opts){
+ opts=opts||{};
  const api=uploadApiUrl();
- if(!api){pdfToast('PDF saved · archive skipped (set versy-api-base)',null);return Promise.resolve();}
- pdfToast('Archiving PDF…',null);
+ const receiptNo=opts.receiptNo||'receipt';
+ const kind=opts.kind||'regular';
+ const view=opts.view||'full';
+ const filename=opts.filename||(receiptNo+'.pdf');
+ if(!api){pdfToast('Archive skipped (set versy-api-base)',null);return Promise.resolve(null);}
+ pdfToast('Storing in Storage…',null);
  return blobToBase64(blob).then(pdfBase64=>fetch(api,{
   method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({receiptNo:receiptNo||'receipt',kind:kind||'regular',view:view||'full',filename:filename,pdfBase64})
+  body:JSON.stringify({receiptNo,kind,view,filename,pdfBase64})
  })).then(async r=>{
   let j=null;try{j=await r.json();}catch(e){}
   if(!r.ok)throw new Error((j&&j.error)||('HTTP '+r.status));
-  pdfToast('PDF saved · archived',true);
+  pdfToast('Stored under '+receiptNo,true);
   return j;
  }).catch(err=>{
-  console.warn('Versy Blob archive failed',err);
-  pdfToast('PDF saved · archive failed',false);
+  console.warn('Versy Blob store failed',err);
+  pdfToast('Storage upload failed',false);
+  return null;
  });
+}
+function archivePdf(blob,filename,kind,receiptNo,view){
+ return storeReceiptPdf(blob,{filename,kind,receiptNo,view});
+}
+function pdfWorkerOpts(paper,filename){
+ return {margin:0,filename:filename,image:{type:'jpeg',quality:0.98},
+  html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',ignoreElements:el=>el.id==='abPick'||(el.classList&&(el.classList.contains('sh-head')||el.classList.contains('sh-foot')||el.classList.contains('sm-sync')||el.classList.contains('msig-set')||el.classList.contains('no-print')))},
+  jsPDF:{unit:'mm',format:paper,orientation:'portrait'},pagebreak:{mode:['css','legacy'],before:'.pb',avoid:['.fl','.fv','.cl>div','.s','h2','h3','.sg']}};
+}
+function makeReceiptPdfBlob(forceView){
+ if(typeof html2pdf==='undefined')return Promise.reject(new Error('PDF tool did not load.'));
+ const wasEditing=editing, wasView=view;
+ if(editing){editing=false;}
+ if(forceView==='small'||forceView==='one-page')view='small';
+ else if(forceView==='full')view='full';
+ buildBar();renderSheet();
+ const sh=$('#sheet'),small=view==='small',paper=small?(state.settings.small.paper==='A4'?'a4':'a5'):'a4';
+ const no=(state.receipt&&state.receipt.current)||'receipt';
+ const kind=receiptKind();
+ const vlabel=small?'one-page':'full';
+ const filename=no+(small?'-one-page':'')+(kind==='paid-in-full'?'-paid-in-full':'')+'.pdf';
+ document.body.classList.add('pdfing');
+ return html2pdf().set(pdfWorkerOpts(paper,filename)).from(sh).outputPdf('blob').then(blob=>{
+  document.body.classList.remove('pdfing');
+  if(wasEditing){editing=true;}
+  if(forceView&&wasView!==view){view=wasView;buildBar();renderSheet();}
+  else if(wasEditing){buildBar();renderSheet();}
+  return {blob,filename,kind,receiptNo:no,view:vlabel};
+ }).catch(e=>{document.body.classList.remove('pdfing');view=wasView;editing=wasEditing;buildBar();renderSheet();throw e;});
+}
+function storeCurrentReceiptToStorage(forceView){
+ return makeReceiptPdfBlob(forceView).then(r=>{
+  if(state.receipt&&state.receipt.current){state.receipt.printed=true;save(true);}
+  return storeReceiptPdf(r.blob,{filename:r.filename,kind:r.kind,receiptNo:r.receiptNo,view:r.view});
+ });
+}
+function parseReceiptMetaFromFilename(name){
+ const base=String(name||'').replace(/\.pdf$/i,'');
+ let view='full', kind='regular', no=base;
+ if(/-paid-in-full$/i.test(no)){kind='paid-in-full';no=no.replace(/-paid-in-full$/i,'');}
+ if(/-one-page$/i.test(no)){view='one-page';no=no.replace(/-one-page$/i,'');}
+ else if(/-full$/i.test(no)){view='full';no=no.replace(/-full$/i,'');}
+ no=no.replace(/-+$/,'')||'receipt';
+ return {receiptNo:no,view,kind};
+}
+function findIndexRowByReceiptNo(receiptNo){
+ try{
+  const list=JSON.parse(localStorage.getItem(window.__VERSY_INDEX_KEY||'versy-receipts-index-v1')||'[]');
+  if(!Array.isArray(list))return null;
+  return list.find(x=>x&&String(x.receiptNo||'')===String(receiptNo||''))||null;
+ }catch(e){return null;}
+}
+function loadReceiptStateById(id){
+ try{const raw=localStorage.getItem('arkorigin-receipt-v1:'+id);return raw?JSON.parse(raw):null;}catch(e){return null;}
+}
+function newReceiptId(){return 'r-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);}
+/** Open a sibling receipt: same serial + same details, different kind and/or view. */
+function openSiblingReceipt(opts){
+ opts=opts||{};
+ const wantKind=opts.kind==='paid-in-full'?'paid-in-full':'regular';
+ const wantView=(opts.view==='one-page'||opts.view==='small')?'one-page':'full';
+ let sourceId=opts.sourceId||window.__VERSY_RECEIPT_ID;
+ let st=opts.sourceState||null;
+ if(!st&&sourceId===window.__VERSY_RECEIPT_ID){try{save(true);}catch(e){}st=clone(state);}
+ if(!st&&sourceId)st=loadReceiptStateById(sourceId);
+ if(!st&&opts.receiptNo){
+  const row=findIndexRowByReceiptNo(opts.receiptNo);
+  if(row&&row.id){sourceId=row.id;st=loadReceiptStateById(row.id);}
+ }
+ if(!st){alert('No receipt details found to copy.');return;}
+ const nid=newReceiptId();
+ const copy=clone(st);
+ copy.kind=wantKind;
+ copy.rev=Date.now();
+ if(!copy.receipt)copy.receipt={};
+ if(opts.receiptNo)copy.receipt.current=opts.receiptNo;
+ else if(state.receipt&&state.receipt.current&&sourceId===window.__VERSY_RECEIPT_ID)copy.receipt.current=state.receipt.current;
+ copy.receipt.printed=false;
+ try{localStorage.setItem('arkorigin-receipt-v1:'+nid,JSON.stringify(copy));}catch(e){alert('Could not save sibling receipt.');return;}
+ let title='';
+ try{const b=(copy.blocks&&copy.blocks[0])||{};title=(b.en||'').toString().slice(0,80);}catch(e){}
+ try{
+  const INDEX_KEY=window.__VERSY_INDEX_KEY||'versy-receipts-index-v1';
+  let list=JSON.parse(localStorage.getItem(INDEX_KEY)||'[]');if(!Array.isArray(list))list=[];
+  list.unshift({id:nid,updatedAt:Date.now(),title:title||(wantKind==='paid-in-full'?'Paid in full':'Receipt'),receiptNo:copy.receipt.current||'',kind:wantKind,mode:''});
+  list=list.slice(0,50);localStorage.setItem(INDEX_KEY,JSON.stringify(list));
+ }catch(e){}
+ let url='receipt.html?id='+encodeURIComponent(nid)+'&view='+encodeURIComponent(wantView);
+ if(wantKind==='paid-in-full')url+='&kind=paid-in-full';
+ location.href=url;
+}
+function siblingButtonsFor(receiptNo, sourceId){
+ const box=h('div',{class:'stor-actions',style:'display:flex;flex-wrap:wrap;gap:6px;margin:6px 0'});
+ const no=receiptNo||((state.receipt&&state.receipt.current)||'');
+ box.append(
+  h('button',{type:'button',title:'Same serial and details, open as full receipt',onclick:()=>openSiblingReceipt({kind:'regular',view:'full',receiptNo:no,sourceId})},'＋ Full (same serial)'),
+  h('button',{type:'button',title:'Same serial and details, open as one-page receipt',onclick:()=>openSiblingReceipt({kind:'regular',view:'one-page',receiptNo:no,sourceId})},'＋ One-page (same serial)'),
+  h('button',{type:'button',class:'pri',style:'background:#a53a2a;border-color:#a53a2a;color:#fff',title:'Same serial and details, paid-in-full settlement',onclick:()=>openSiblingReceipt({kind:'paid-in-full',view:'full',receiptNo:no,sourceId})},'＋ Paid in full (same serial)')
+ );
+ return box;
+}
+function ingestPdfFileToStorage(file, fallbackNo){
+ const meta=parseReceiptMetaFromFilename(file.name);
+ const receiptNo=meta.receiptNo&&meta.receiptNo!=='receipt'?meta.receiptNo:(fallbackNo||(state.receipt&&state.receipt.current)||'receipt');
+ return file.arrayBuffer().then(buf=>{
+  const blob=new Blob([buf],{type:'application/pdf'});
+  return storeReceiptPdf(blob,{receiptNo,kind:meta.kind,view:meta.view,filename:file.name});
+ });
+}
+function handleStorageDrop(dt, fallbackNo, onDone){
+ const tasks=[];
+ if(dt.files&&dt.files.length){
+  [...dt.files].forEach(f=>{if(/pdf/i.test(f.type)||/\.pdf$/i.test(f.name))tasks.push(()=>ingestPdfFileToStorage(f,fallbackNo));});
+ }
+ let versy=null;
+ try{versy=dt.getData('application/x-versy-receipt')||dt.getData('text/plain');}catch(e){}
+ if(versy){
+  try{
+   const meta=JSON.parse(versy);
+   if(meta&&meta.id&&meta.id===window.__VERSY_RECEIPT_ID){
+    tasks.push(()=>storeCurrentReceiptToStorage(meta.view||view));
+   }else if(meta&&meta.id){
+    tasks.push(()=>Promise.resolve().then(()=>{
+     pdfToast('Open that receipt, then drop it here — or use Store current',null);
+    }));
+   }else{
+    tasks.push(()=>storeCurrentReceiptToStorage());
+   }
+  }catch(e){
+   if(/versy|receipt/i.test(versy))tasks.push(()=>storeCurrentReceiptToStorage());
+  }
+ }
+ if(!tasks.length){pdfToast('Drop a PDF or the current receipt',false);return;}
+ let chain=Promise.resolve();
+ tasks.forEach(fn=>{chain=chain.then(fn);});
+ chain.then(()=>{if(onDone)onDone();}).catch(e=>pdfToast(String(e),false));
 }
 function storageTab(){
  const api=listApiUrl();
+ const curNo=(state.receipt&&state.receipt.current)||'';
  openDlg('Storage 存檔',()=>{
-  const wrap=h('div',{id:'storWrap',style:'display:grid;gap:10px;min-height:120px'});
-  wrap.append(h('p',{class:'hint'},'PDFs from Save PDF, grouped by receipt number. Full, one-page and paid-in-full that share a number stay in the same folder.'));
-  if(!api){
-   wrap.append(h('p',{class:'hint'},'No API base set. Deploy this repo to Vercel with BLOB_READ_WRITE_TOKEN, or run: localStorage.setItem("versy-api-base","https://YOUR-VERCEL-URL")'));
-   return wrap;
-  }
-  const listEl=h('div',{class:'stor-list'},h('p',{class:'hint'},'Loading…'));
-  wrap.append(listEl);
-  fetch(api).then(r=>r.json()).then(data=>{
-   listEl.innerHTML='';
-   const folders=(data&&data.folders)||[];
-   if(!folders.length){listEl.append(h('p',{class:'hint'},'No archived PDFs yet. Use Save PDF to store one.'));return;}
-   folders.forEach(f=>{
-    const row=h('div',{class:'stor-folder'});
-    const btn=h('button',{type:'button',style:'width:100%;text-align:left'}, (f.receiptNo||'?')+' · '+(f.count||0)+' file(s)');
-    const kids=h('div',{class:'stor-files',style:'display:none;padding:6px 0 6px 12px'});
-    btn.onclick=()=>{
-     if(kids.style.display!=='none'){kids.style.display='none';return;}
-     kids.style.display='block';kids.textContent='Loading…';
-     fetch(listApiUrl(f.receiptNo)).then(r=>r.json()).then(d=>{
-      kids.innerHTML='';
-      const files=(d&&d.files)||[];
-      if(!files.length){kids.append(h('p',{class:'hint'},'Empty'));return;}
-      files.forEach(file=>{
-       const meta=[file.view,file.kind].filter(Boolean).join(' · ');
-       kids.append(h('div',{style:'display:flex;gap:8px;align-items:center;padding:4px 0;font-size:13px'},
-        h('a',{href:file.url,target:'_blank',rel:'noopener'},file.pathname.split('/').pop()||'PDF'),
-        h('span',{style:'color:var(--muted);font-size:11px'},meta)
-       ));
-      });
-     }).catch(e=>{kids.textContent='Failed: '+e;});
-    };
-    row.append(btn,kids);listEl.append(row);
+  const wrap=h('div',{id:'storWrap',style:'display:grid;gap:10px;min-height:160px'});
+  wrap.append(h('p',{class:'hint'},'One place for archived PDFs. Drop a PDF (or drag this receipt) into the box — it lands under that receipt number. Full, one-page and paid-in-full that share a number stay in the same folder.'));
+
+  const drop=h('div',{class:'stor-drop',id:'storDrop',tabindex:'0'},
+   h('div',{style:'font-weight:700;color:var(--navy)'},'Drag & drop receipt here'),
+   h('div',{style:'font-size:12px;color:var(--muted);margin-top:4px'},'PDF file, or drag the current receipt from the page · 拖放 PDF 或目前收據'));
+  const setHi=on=>drop.classList.toggle('dragover',!!on);
+  ;['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();setHi(true);}));
+  ;['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();if(ev==='dragleave')setHi(false);}));
+  drop.addEventListener('drop',e=>{setHi(false);handleStorageDrop(e.dataTransfer,curNo,()=>refreshStorageList());});
+  wrap.append(drop);
+
+  const curBox=h('div',{style:'display:grid;gap:8px;padding:10px;border:1px solid var(--line);border-radius:10px;background:#fafbfc'});
+  curBox.append(h('div',{style:'font-weight:600'},'This receipt · '+(curNo||'(no number yet)')));
+  curBox.append(h('div',{style:'display:flex;flex-wrap:wrap;gap:6px'},
+   h('button',{type:'button',class:'pri',onclick:()=>storeCurrentReceiptToStorage().then(()=>refreshStorageList())},'Store current PDF'),
+   h('button',{type:'button',draggable:'true',id:'storDragChip',title:'Drag me onto the drop zone'},'⠿ Drag current')
+  ));
+  curBox.append(siblingButtonsFor(curNo, window.__VERSY_RECEIPT_ID));
+  wrap.append(curBox);
+  setTimeout(()=>{
+   const chip=$('#storDragChip');
+   if(!chip)return;
+   chip.addEventListener('dragstart',e=>{
+    const meta=JSON.stringify({id:window.__VERSY_RECEIPT_ID,receiptNo:curNo,kind:receiptKind(),view:view==='small'?'one-page':'full'});
+    e.dataTransfer.setData('application/x-versy-receipt',meta);
+    e.dataTransfer.setData('text/plain',meta);
+    e.dataTransfer.effectAllowed='copy';
+    setHi(true);
    });
-  }).catch(e=>{listEl.textContent='Could not load storage: '+e;});
+   chip.addEventListener('dragend',()=>setHi(false));
+  },0);
+
+  if(!api){
+   wrap.append(h('p',{class:'hint'},'Archive API not set. Deploy to Vercel with BLOB_READ_WRITE_TOKEN, then: localStorage.setItem("versy-api-base","https://YOUR-VERCEL-URL")'));
+  }
+
+  const listEl=h('div',{class:'stor-list',id:'storList'},h('p',{class:'hint'},api?'Loading…':'Folders appear after API is configured.'));
+  wrap.append(listEl);
+
+  window.__versyRefreshStorageList=refreshStorageList;
+  function refreshStorageList(){
+   const el=$('#storList');if(!el)return;
+   if(!api){el.innerHTML='<p class="hint">No API — drop/store will skip until versy-api-base is set.</p>';return;}
+   el.innerHTML='<p class="hint">Loading…</p>';
+   fetch(api).then(r=>r.json()).then(data=>{
+    el.innerHTML='';
+    const folders=(data&&data.folders)||[];
+    if(!folders.length){el.append(h('p',{class:'hint'},'No archived PDFs yet. Store current or drop a PDF.'));return;}
+    folders.forEach(f=>{
+     const row=h('div',{class:'stor-folder'});
+     const head=h('div',{style:'display:flex;gap:8px;align-items:center;flex-wrap:wrap'});
+     const btn=h('button',{type:'button',style:'flex:1;text-align:left'}, (f.receiptNo||'?')+' · '+(f.count||0)+' file(s)');
+     const kids=h('div',{class:'stor-files',style:'display:none;padding:6px 0 6px 4px'});
+     const src=findIndexRowByReceiptNo(f.receiptNo);
+     btn.onclick=()=>{
+      if(kids.style.display!=='none'){kids.style.display='none';return;}
+      kids.style.display='block';kids.textContent='Loading…';
+      fetch(listApiUrl(f.receiptNo)).then(r=>r.json()).then(d=>{
+       kids.innerHTML='';
+       kids.append(siblingButtonsFor(f.receiptNo, src&&src.id));
+       const files=(d&&d.files)||[];
+       if(!files.length){kids.append(h('p',{class:'hint'},'Empty folder'));return;}
+       files.forEach(file=>{
+        const meta=[file.view,file.kind].filter(Boolean).join(' · ');
+        kids.append(h('div',{style:'display:flex;gap:8px;align-items:center;padding:4px 0;font-size:13px'},
+         h('a',{href:file.url,target:'_blank',rel:'noopener'},file.pathname.split('/').pop()||'PDF'),
+         h('span',{style:'color:var(--muted);font-size:11px'},meta)
+        ));
+       });
+      }).catch(e=>{kids.textContent='Failed: '+e;});
+     };
+     head.append(btn);row.append(head,kids);el.append(row);
+    });
+   }).catch(e=>{el.textContent='Could not load storage: '+e;});
+  }
+  refreshStorageList();
   return wrap;
  });
 }
 function savePdf(){
  if(typeof html2pdf==='undefined'){alert('PDF tool did not load.');return;}
- if(editing){editing=false;buildBar();renderSheet();}
- const sh=$('#sheet'),small=view==='small',paper=small?(state.settings.small.paper==='A4'?'a4':'a5'):'a4';
- const no=(state.receipt&&state.receipt.current)||'receipt';
- const kind=receiptKind();
- const filename=no+(small?'-one-page':'')+(kind==='paid-in-full'?'-paid-in-full':'')+'.pdf';
- document.body.classList.add('pdfing');
- const worker=html2pdf().set({margin:0,filename:filename,image:{type:'jpeg',quality:0.98},
-  html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',ignoreElements:el=>el.id==='abPick'||(el.classList&&(el.classList.contains('sh-head')||el.classList.contains('sh-foot')||el.classList.contains('sm-sync')))},
-  jsPDF:{unit:'mm',format:paper,orientation:'portrait'},pagebreak:{mode:['css','legacy'],before:'.pb',avoid:['.fl','.fv','.cl>div','.s','h2','h3','.sg']}})
- .from(sh);
- worker.outputPdf('blob').then(blob=>{
+ makeReceiptPdfBlob().then(r=>{
   const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download=filename;
+  a.href=URL.createObjectURL(r.blob);
+  a.download=r.filename;
   document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),2000);
-  document.body.classList.remove('pdfing');
-  if(state.receipt.current){state.receipt.printed=true;save(true);}
-  return archivePdf(blob,filename,kind,no,small?'one-page':'full');
- }).catch(e=>{document.body.classList.remove('pdfing');alert('Could not make the PDF: '+e);});
+  if(state.receipt&&state.receipt.current){state.receipt.printed=true;save(true);}
+  return storeReceiptPdf(r.blob,{filename:r.filename,kind:r.kind,receiptNo:r.receiptNo,view:r.view});
+ }).catch(e=>alert('Could not make the PDF: '+e));
 }
 /* ---------- shell and top bar ---------- */
 function shell(){
@@ -2040,6 +2220,16 @@ function shell(){
   h('input',{type:'file',id:'impf',accept:'application/json',style:'display:none',onchange:importJson}),
   h('input',{type:'file',id:'imgf',accept:'image/*',style:'display:none'}));
  buildBar();renderSheet();
+ wireReceiptDrag();
+}
+function wireReceiptDrag(){
+ const sh=$('#sheet');if(!sh||sh.dataset.dragWired)return;sh.dataset.dragWired='1';
+ sh.setAttribute('draggable','true');
+ sh.addEventListener('dragstart',e=>{
+  if(e.target&&e.target.closest&&e.target.closest('input,textarea,button,a,[contenteditable]')){e.preventDefault();return;}
+  const meta=JSON.stringify({id:window.__VERSY_RECEIPT_ID,receiptNo:(state.receipt&&state.receipt.current)||'',kind:receiptKind(),view:view==='small'?'one-page':'full'});
+  try{e.dataTransfer.setData('application/x-versy-receipt',meta);e.dataTransfer.setData('text/plain',meta);e.dataTransfer.effectAllowed='copy';}catch(err){}
+ });
 }
 function setView(k){view=k;cur=null;buildBar();renderSheet();window.scrollTo({top:0});}
 function viewSeg(){
@@ -2409,6 +2599,8 @@ pinRoles();
 if(window.__VERSY_RECEIPT_KIND==='paid-in-full'||(state&&state.kind==='paid-in-full')){
  state.kind='paid-in-full';applyPaidKindDefaults();
 }else{state.kind=state.kind||'regular';}
+if(window.__VERSY_RECEIPT_VIEW==='one-page') view='small';
+else if(window.__VERSY_RECEIPT_VIEW==='full') view='full';
 shell();
 try{
   const q=new URLSearchParams(location.search);
@@ -2426,6 +2618,12 @@ try{
 .msig.sm .msig-img{max-height:40px}
 .sg .msig + .lb{margin-top:0}
 body.kind-paid section[data-bid="b13"],body.kind-paid section[data-bid="b14"]{display:none!important}
+
+.stor-drop{border:2px dashed #C9CDD4;border-radius:12px;padding:22px 14px;text-align:center;background:#fff;transition:border-color .15s,background .15s,box-shadow .15s}
+.stor-drop.dragover{border-color:#a53a2a;background:rgba(165,58,42,.08);box-shadow:inset 0 0 0 2px rgba(165,58,42,.25)}
+.stor-actions button{font:inherit;font-size:12px;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:#fff;cursor:pointer}
+.stor-actions button.pri{color:#fff}
+
 .stor-folder>button{font:inherit;padding:8px 10px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer}
 .stor-folder>button:hover{background:var(--bg)}
 @media print{.msig-set,.no-print{display:none!important}}
