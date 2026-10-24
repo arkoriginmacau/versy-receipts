@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.29 · 26.10.24';
+const VERSION='v0.30 · 26.10.24';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1793,7 +1793,7 @@ ${editing?'<div class="sm-sync">Names, amounts and artwork come from the Artwork
 <div class="sm-l">${sl('paid')}</div><div class="sm-v sm-amt">${esc(paid)||'—'}</div>
 ${sm.showBalance&&(bal||editing)?`<div class="sm-l">${sl('bal')}</div><div class="sm-v sm-amt">${esc(bal)||'<span class="sm-s">(calculated when the price and amount paid are numbers)</span>'}</div>`:''}
 </div>
-${editing?`<div class="sm-stamps"><span class="sm-stamp">${sl('full')}</span><span class="sm-stamp">${sl('part')}</span></div>`:(status?`<div class="sm-stamps"><span class="sm-stamp">${bi(L[status].en,L[status].zh)}</span></div>`:'')}
+${editing?`<div class="sm-stamps"><span class="sm-stamp">${sl('full')}</span><span class="sm-stamp">${sl('part')}</span></div>`:(isPaidKind()?`<div class="sm-stamps"><span class="sm-stamp paid-stamp">${bi('Paid in full','已全額支付')}</span></div>`:(status?`<div class="sm-stamps"><span class="sm-stamp">${bi(L[status].en,L[status].zh)}</span></div>`:''))}${isPaidKind()?'<div class="paid-sheet-stamp sm" aria-hidden="true"><span class="en">PAID IN FULL</span><span class="zh">已全額支付</span></div>':''}
 <p class="sm-note">${txt('note')}</p>
 <div class="sm-foot">${sm.showSign?`<div class="sm-sign">${merchantSigHtml('sm')}<div class="lb">${sl('sign')}</div></div>`:'<div></div>'}${qr?`<figure class="sm-qr">${qr}<figcaption>${sl('scan')}</figcaption></figure>`:''}</div>
 <p class="sm-terms">${txt('terms')}</p>
@@ -1867,13 +1867,13 @@ function renderSheet(forceClear){
  applyBody();
  const sh=$('#sheet');
  if(view==='small'){
-  sh.className='sheet small '+(s.small.paper==='A4'?'a4':'a5');
+  sh.className='sheet small '+(s.small.paper==='A4'?'a4':'a5')+(isPaidKind()?' has-paid-stamp':'');
   sh.innerHTML=smallHtml();
   if(fp){const n=document.querySelector(`[contenteditable][data-b="${fp[0]}"][data-p="${fp[1]}"]`);if(n){n.focus();placeEnd(n);}}
   return;
  }
- sh.className='sheet';
- $('#sheet').innerHTML=`<div class="sh-head"><b${A(null,'@s.headerLeft','Header (left)')}>${esc(s.headerLeft)}</b><span${A(null,'@s.headerRight','Header (right)')}>${esc(s.headerRight)}</span></div><div class="blocks">${state.blocks.filter(b=>editing||!b.hidden).map(blockHtml).join('')}</div>${editing?'<div class="endadd"><button class="addb" data-act="b-add-end">+ Add block</button></div>':''}<div class="sh-foot"><span${A(null,'@s.footerLeft','Footer')}>${esc(s.footerLeft)}</span></div>`;
+ sh.className='sheet'+(isPaidKind()?' has-paid-stamp':'');
+ $('#sheet').innerHTML=`<div class="sh-head"><b${A(null,'@s.headerLeft','Header (left)')}>${esc(s.headerLeft)}</b><span${A(null,'@s.headerRight','Header (right)')}>${esc(s.headerRight)}</span></div><div class="blocks">${state.blocks.filter(b=>editing||!b.hidden).map(blockHtml).join('')}</div>${editing?'<div class="endadd"><button class="addb" data-act="b-add-end">+ Add block</button></div>':''}<div class="sh-foot"><span${A(null,'@s.footerLeft','Footer')}>${esc(s.footerLeft)}</span></div>${isPaidKind()?'<div class="paid-sheet-stamp" aria-hidden="true"><span class="en">PAID IN FULL</span><span class="zh">已全額支付</span></div>':''}`;
  restoreForm();applyStrikes();
  if(fp){const n=document.querySelector(`[contenteditable][data-b="${fp[0]}"][data-p="${fp[1]}"]`);if(n){n.focus();placeEnd(n);}}
 }
@@ -2173,6 +2173,52 @@ function openSiblingReceipt(opts){
  if(wantKind==='paid-in-full')url+='&kind=paid-in-full';
  location.href=url;
 }
+function preparePaidInFullClone(st){
+ const copy=clone(st);
+ copy.kind='paid-in-full';
+ copy.stamp='paid-in-full';
+ copy.rev=Date.now();
+ if(!copy.receipt)copy.receipt={};
+ copy.receipt.printed=false;
+ if(copy.settings){
+  copy.settings.accent='#a53a2a';
+  copy.settings.headerRight='Paid in Full Receipt 已全額支付收據';
+ }
+ (copy.blocks||[]).forEach(b=>{
+  if(!b)return;
+  if(b.id==='b01'&&b.type==='title'){b.en='Paid in Full Receipt';b.zh='已全額支付收據';}
+  if(b.id==='b06'&&b.type==='note'){b.en='This receipt confirms the artwork has been paid in full.';b.zh='本收據確認該藝術品已全額支付。';}
+  if(b.id==='b10'&&b.type==='heading'){b.en='Settlement';b.zh='結算';}
+  if(b.id==='b11'&&b.type==='subheading'){b.en='Final payment';b.zh='最終付款';}
+  if(b.id==='b13'||b.id==='b14'){b.hidden=true;}
+ });
+ return copy;
+}
+/** Split current receipt into a Paid-in-full sibling (same serial + details + stamp). */
+function splitPayInFullReceipt(){
+ if(isPaidKind()){
+  alert('This receipt is already Paid in full.');
+  return;
+ }
+ try{save(true);}catch(e){}
+ const serial=receiptNoStr(state.receipt&&state.receipt.current);
+ if(!serial){
+  if(!confirm('No receipt number yet. Issue one and split as Paid in full?'))return;
+  try{issueNo();}catch(e){}
+ }
+ const copy=preparePaidInFullClone(state);
+ if(state.receipt&&state.receipt.current)copy.receipt.current=state.receipt.current;
+ const nid=newReceiptId();
+ try{localStorage.setItem('arkorigin-receipt-v1:'+nid,JSON.stringify(copy));}catch(e){alert('Could not create Paid-in-full receipt.');return;}
+ try{
+  const INDEX_KEY=window.__VERSY_INDEX_KEY||'versy-receipts-index-v1';
+  let list=JSON.parse(localStorage.getItem(INDEX_KEY)||'[]');if(!Array.isArray(list))list=[];
+  list.unshift({id:nid,updatedAt:Date.now(),title:'Paid in Full Receipt',receiptNo:receiptNoStr(copy.receipt&&copy.receipt.current),kind:'paid-in-full',mode:''});
+  list=list.slice(0,50);localStorage.setItem(INDEX_KEY,JSON.stringify(list));
+ }catch(e){}
+ const viewParam=view==='small'?'one-page':'full';
+ location.href='receipt.html?id='+encodeURIComponent(nid)+'&kind=paid-in-full&view='+encodeURIComponent(viewParam);
+}
 function siblingButtonsFor(receiptNo, sourceId){
  const box=h('div',{class:'stor-actions',style:'display:flex;flex-wrap:wrap;gap:6px;margin:6px 0'});
  const no=receiptNo||((state.receipt&&state.receipt.current)||'');
@@ -2462,7 +2508,7 @@ function buildBar(){
   bar.append(h('span',{class:'ttl'},isPaidKind()?'Paid in full':'Purchase receipt'),h('span',{class:'ver'},VERSION),viewSeg(),h('span',{class:'sp'}),langSeg(),
    h('button',{onclick:newReceipt},'New receipt'),
    h('button',{onclick:()=>openSiblingReceipt({kind:'regular',view:'one-page'}),title:'Same serial and details as one-page'},'＋ One-page'),
-   h('button',{onclick:()=>openSiblingReceipt({kind:'paid-in-full',view:'full'}),title:'Same serial and details as paid-in-full',style:'border-color:#a53a2a;color:#a53a2a'},'＋ Paid in full'),
+   h('button',{onclick:splitPayInFullReceipt,title:'Split a Paid-in-full copy with the same serial, details, and stamp',style:'background:#a53a2a;border-color:#a53a2a;color:#fff;font-weight:700'},'Pay in full · split'),
    h('button',{onclick:()=>{if(confirm('Clear everything typed into the form?'))renderSheet(true);}},'Clear form'),
    h('button',{onclick:toggleEdit},'✎ Edit'),
    h('button',{onclick:()=>window.print()},'Print'),h('button',{class:'pri',onclick:savePdf,title:'Save a clean PDF with no browser date, title or file path'},'⬇ Save PDF'),
@@ -2864,6 +2910,14 @@ body.kind-paid section[data-bid="b13"],body.kind-paid section[data-bid="b14"]{di
 @media print{.msig-set,.no-print{display:none!important}}
 
 .paid-badge{display:inline-block;margin:0 0 8px;padding:4px 12px;border-radius:999px;background:#a53a2a;color:#fff;font-size:10pt;font-weight:700;letter-spacing:.04em;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.sheet{position:relative}
+.paid-sheet-stamp{position:absolute;right:10mm;top:32mm;z-index:6;pointer-events:none;border:3px solid #a53a2a;color:#a53a2a;background:rgba(255,255,255,.88);padding:10px 16px;border-radius:6px;transform:rotate(-14deg);font-weight:800;letter-spacing:.06em;text-align:center;line-height:1.25;box-shadow:0 0 0 1px rgba(165,58,42,.15);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.paid-sheet-stamp .en{display:block;font-size:13pt}
+.paid-sheet-stamp .zh{display:block;font-size:10pt;font-weight:700;margin-top:2px}
+.paid-sheet-stamp.sm{right:6mm;top:18mm;padding:8px 12px}
+.paid-sheet-stamp.sm .en{font-size:11pt}
+.lang-en .paid-sheet-stamp .zh,.lang-zh .paid-sheet-stamp .en{display:none}
+@media print{.paid-sheet-stamp{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 .sm-stamp.paid-stamp{background:#a53a2a;color:#fff;border-color:#a53a2a}
 body.kind-paid .bar .ttl{color:#a53a2a}
 @media print{.paid-badge{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
