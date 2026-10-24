@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.31 · 26.10.24';
+const VERSION='v0.32 · 26.10.24';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -2130,13 +2130,37 @@ function parseReceiptMetaFromFilename(name){
 }
 function findIndexRowByReceiptNo(receiptNo){
  try{
+  const want=String(receiptNo||'').toLowerCase();
+  if(!want)return null;
   const list=JSON.parse(localStorage.getItem(window.__VERSY_INDEX_KEY||'versy-receipts-index-v1')||'[]');
   if(!Array.isArray(list))return null;
-  return list.find(x=>x&&String(x.receiptNo||'')===String(receiptNo||''))||null;
+  return list.find(x=>x&&String(x.receiptNo||'').toLowerCase()===want)||null;
  }catch(e){return null;}
 }
 function loadReceiptStateById(id){
  try{const raw=localStorage.getItem('arkorigin-receipt-v1:'+id);return raw?JSON.parse(raw):null;}catch(e){return null;}
+}
+/** Find any saved editor state whose receipt.current matches (case-insensitive). */
+function findReceiptStateByNumber(receiptNo){
+ const want=String(receiptNo||'').toLowerCase();
+ if(!want)return null;
+ const row=findIndexRowByReceiptNo(receiptNo);
+ if(row&&row.id){
+  const st=loadReceiptStateById(row.id);
+  if(st)return {id:row.id,state:st};
+ }
+ try{
+  for(let i=0;i<localStorage.length;i++){
+   const k=localStorage.key(i);
+   if(!k||k.indexOf('arkorigin-receipt-v1:')!==0)continue;
+   const st=JSON.parse(localStorage.getItem(k)||'null');
+   if(!st||!st.receipt)continue;
+   if(String(st.receipt.current||'').toLowerCase()===want){
+    return {id:k.slice('arkorigin-receipt-v1:'.length),state:st};
+   }
+  }
+ }catch(e){}
+ return null;
 }
 function newReceiptId(){return 'r-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);}
 function openSiblingReceipt(opts){
@@ -2197,59 +2221,127 @@ function preparePaidInFullClone(st){
 /** Split current receipt into a Paid-in-full sibling (same serial + details + stamp). */
 function splitPayInFullReceipt(opts){
  opts=opts||{};
+ const fromStorage=!!opts.fromStorage;
  let sourceId=opts.sourceId||null;
  let st=opts.sourceState||null;
  let serial=receiptNoStr(opts.receiptNo||'');
 
  if(!st&&sourceId)st=loadReceiptStateById(sourceId);
  if(!st&&serial){
-  const row=findIndexRowByReceiptNo(serial);
-  if(row&&row.id){sourceId=row.id;st=loadReceiptStateById(row.id);}
+  const hit=findReceiptStateByNumber(serial);
+  if(hit){sourceId=hit.id;st=hit.state;}
  }
  if(!st){
-  /* fall back to currently open receipt if serial matches or no serial asked */
   const curNo=receiptNoStr(state.receipt&&state.receipt.current);
-  if(!serial||serial===curNo){
-   if(isPaidKind()&&!opts.force){alert('This receipt is already Paid in full.');return;}
+  if(!serial||String(serial).toLowerCase()===String(curNo).toLowerCase()){
    try{save(true);}catch(e){}
    st=clone(state);
    serial=serial||curNo;
    sourceId=window.__VERSY_RECEIPT_ID;
   }
  }
+ /* Storage split: never block — build from seed if no editor state */
+ if(!st&&serial&&fromStorage){
+  st=clone(seed);
+  if(!st.receipt)st.receipt={};
+  st.receipt.current=serial;
+ }
+ if(!st&&serial){
+  st=clone(seed);
+  if(!st.receipt)st.receipt={};
+  st.receipt.current=serial;
+ }
  if(!st){
-  alert('Open the purchase receipt for '+ (serial||'this number') +' first, then split Paid in full.');
+  if(fromStorage){pdfToast('Could not build Paid-in-full PDF',false);return Promise.resolve(null);}
+  alert('Need a receipt to split Paid in full.');
   return;
  }
- if((st.kind==='paid-in-full'||opts.fromKind==='paid-in-full')&&!opts.force){
+ if((st.kind==='paid-in-full'||opts.fromKind==='paid-in-full')&&!opts.force&&!fromStorage){
   alert('That receipt is already Paid in full.');
   return;
  }
- if(!serial){
-  serial=receiptNoStr(st.receipt&&st.receipt.current);
+ if(opts.fromKind==='paid-in-full'&&fromStorage){
+  pdfToast('Already a Paid-in-full file',null);
+  return Promise.resolve(null);
+ }
+ if(!serial)serial=receiptNoStr(st.receipt&&st.receipt.current);
+ if(!serial&&sourceId===window.__VERSY_RECEIPT_ID){
+  try{issueNo();save(true);st=clone(state);serial=receiptNoStr(state.receipt&&state.receipt.current);}catch(e){}
  }
  if(!serial){
-  if(sourceId===window.__VERSY_RECEIPT_ID){
-   if(!confirm('No receipt number yet. Issue one and split as Paid in full?'))return;
-   try{issueNo();save(true);st=clone(state);serial=receiptNoStr(state.receipt&&state.receipt.current);}catch(e){}
-  }
+  if(fromStorage){pdfToast('Need a receipt number',false);return Promise.resolve(null);}
+  alert('Need a receipt number to split Paid in full.');
+  return;
  }
- if(!serial){alert('Need a receipt number to split Paid in full.');return;}
 
  const copy=preparePaidInFullClone(st);
  copy.receipt=copy.receipt||{};
  copy.receipt.current=serial;
  copy.receipt.printed=false;
  const nid=newReceiptId();
- try{localStorage.setItem('arkorigin-receipt-v1:'+nid,JSON.stringify(copy));}catch(e){alert('Could not create Paid-in-full receipt.');return;}
+ try{localStorage.setItem('arkorigin-receipt-v1:'+nid,JSON.stringify(copy));}catch(e){}
  try{
   const INDEX_KEY=window.__VERSY_INDEX_KEY||'versy-receipts-index-v1';
   let list=JSON.parse(localStorage.getItem(INDEX_KEY)||'[]');if(!Array.isArray(list))list=[];
   list.unshift({id:nid,updatedAt:Date.now(),title:'Paid in Full Receipt',receiptNo:serial,kind:'paid-in-full',mode:''});
   list=list.slice(0,50);localStorage.setItem(INDEX_KEY,JSON.stringify(list));
  }catch(e){}
- const viewParam=(opts.view==='one-page'||opts.view==='small'||view==='small')?'one-page':'full';
- location.href='receipt.html?id='+encodeURIComponent(nid)+'&kind=paid-in-full&view='+encodeURIComponent(viewParam);
+
+ const wantView=(opts.view==='one-page'||opts.view==='small')?'one-page':'full';
+
+ if(fromStorage){
+  pdfToast('Creating Paid-in-full PDF…',null);
+  return renderPaidPdfFromState(copy, wantView).then(r=>{
+   if(!r||!r.blob)throw new Error('PDF failed');
+   return storeReceiptPdf(r.blob,{
+    filename:displayPdfName(serial,'full'===wantView?'full':wantView,'paid-in-full'),
+    kind:'paid-in-full',
+    view:wantView,
+    receiptNo:serial
+   });
+  }).then(()=>{
+   pdfToast('Paid-in-full PDF added under '+serial,true);
+   try{if(window.__versyRefreshStorageList)window.__versyRefreshStorageList();}catch(e){}
+  }).catch(err=>{
+   console.warn(err);
+   pdfToast('Could not create Paid-in-full PDF: '+(err&&err.message||err),false);
+  });
+ }
+
+ location.href='receipt.html?id='+encodeURIComponent(nid)+'&kind=paid-in-full&view='+encodeURIComponent(wantView);
+}
+function renderPaidPdfFromState(paidState, forceView){
+ if(typeof html2pdf==='undefined')return Promise.reject(new Error('PDF tool did not load.'));
+ const bak={
+  state:state,
+  view:view,
+  editing:editing,
+  formStash:Object.assign({},formStash),
+  kind:window.__VERSY_RECEIPT_KIND
+ };
+ try{
+  state=paidState;
+  editing=false;
+  view=(forceView==='one-page'||forceView==='small')?'small':'full';
+  window.__VERSY_RECEIPT_KIND='paid-in-full';
+  formStash={};
+  try{applyPaidKindDefaults();}catch(e){}
+  buildBar();
+  renderSheet();
+  return makeReceiptPdfBlob(view==='small'?'one-page':'full').finally(()=>{
+   state=bak.state;
+   view=bak.view;
+   editing=bak.editing;
+   formStash=bak.formStash;
+   window.__VERSY_RECEIPT_KIND=bak.kind||(state&&state.kind)||'regular';
+   try{buildBar();renderSheet();}catch(e){}
+  });
+ }catch(err){
+  state=bak.state;view=bak.view;editing=bak.editing;formStash=bak.formStash;
+  window.__VERSY_RECEIPT_KIND=bak.kind||'regular';
+  try{buildBar();renderSheet();}catch(e){}
+  return Promise.reject(err);
+ }
 }
 function siblingButtonsFor(receiptNo, sourceId){
  const box=h('div',{class:'stor-actions',style:'display:flex;flex-wrap:wrap;gap:6px;margin:6px 0'});
@@ -2434,12 +2526,14 @@ function storageTab(){
      splitBtn.addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();
       const rowMeta=findIndexRowByReceiptNo(file.receiptNo);
-      splitPayInFullReceipt({
+      splitBtn.disabled=true;
+      Promise.resolve(splitPayInFullReceipt({
        receiptNo:file.receiptNo,
        sourceId:rowMeta&&rowMeta.id,
        view:file.view==='one-page'?'one-page':'full',
-       fromKind:file.kind
-      });
+       fromKind:file.kind,
+       fromStorage:true
+      })).finally(()=>{splitBtn.disabled=false;});
      });
      row.append(splitBtn);
     }else{
