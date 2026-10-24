@@ -2274,7 +2274,7 @@ document.addEventListener('blur',function(e){norm(e.target);},true);})();
     var bar=document.querySelector('.bar');
     if(!bar||bar.querySelector('[data-versy-nav]'))return;
     var a=document.createElement('a');
-    a.href='/'; a.textContent='All receipts'; a.dataset.versyNav='1';
+    a.href='./'; a.textContent='All receipts'; a.dataset.versyNav='1';
     a.style.cssText='margin-left:auto;font:600 12px system-ui;color:#1F2A44;text-decoration:none;padding:6px 10px;border:1px solid #C9CDD4;border-radius:6px;background:#fff';
     bar.appendChild(a);
   }

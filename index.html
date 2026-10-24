@@ -42,7 +42,7 @@ main{max-width:720px;margin:24px auto;padding:0 16px}
 (function(){
   const INDEX_KEY='versy-receipts-index-v1';
   function nid(){return 'r-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);}
-  document.getElementById('newBtn').href='/receipt.html?id='+encodeURIComponent(nid());
+  document.getElementById('newBtn').href='receipt.html?id='+encodeURIComponent(nid());
   function fmt(ts){try{return new Date(ts).toLocaleString();}catch(e){return '';}}
   function esc(s){return String(s||'').replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});}
   let list=[];
@@ -54,7 +54,7 @@ main{max-width:720px;margin:24px auto;padding:0 16px}
     return;
   }
   el.innerHTML=list.map(function(r){
-    return '<a class="row" href="/receipt.html?id='+encodeURIComponent(r.id)+'">'+
+    return '<a class="row" href="receipt.html?id='+encodeURIComponent(r.id)+'">'+
       '<div class="t">'+esc(r.title||'Untitled receipt')+(r.receiptNo?' <span class="m">· '+esc(r.receiptNo)+'</span>':'')+'</div>'+
       '<div class="m">'+esc(fmt(r.updatedAt))+'</div></a>';
   }).join('');
