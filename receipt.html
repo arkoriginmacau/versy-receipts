@@ -15,7 +15,7 @@
     let view = (q.get('view')||'').toLowerCase();
     if(view === 'one-page' || view === 'small' || view === 'onepage') view = 'one-page';
     else if(view === 'full') view = 'full';
-    else view = '';
+    else view = (kind === 'paid-in-full') ? 'one-page' : '';
     if(!id){
       id = 'r-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8);
       q.set('id', id);
@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.38 · 26.10.25';
+const VERSION='v0.39 · 26.10.25';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1819,6 +1819,7 @@ function applyPaidKindDefaults(){
  if(!isPaidKind())return;
  state.kind='paid-in-full';
  window.__VERSY_RECEIPT_KIND='paid-in-full';
+ try{if(typeof view!=='undefined')view='small';}catch(e){}
  try{
   const q=new URLSearchParams(location.search);
   if(q.get('kind')!=='paid-in-full'){q.set('kind','paid-in-full');history.replaceState(null,'',location.pathname+'?'+q.toString()+location.hash);}
@@ -1929,7 +1930,7 @@ function toggleReceiptMode(){
   location.href='receipt.html?id='+encodeURIComponent(nid);
   return;
  }
- splitPayInFullReceipt();
+ splitPayInFullReceipt({view:'one-page'});
 }
 function modeToggleBtn(){
  const paid=isPaidKind();
@@ -2474,7 +2475,7 @@ function splitPayInFullReceipt(opts){
   list=list.slice(0,50);localStorage.setItem(INDEX_KEY,JSON.stringify(list));
  }catch(e){}
 
- const wantView=(opts.view==='one-page'||opts.view==='small')?'one-page':'full';
+ const wantView=(opts.view==='full')?'full':'one-page';
 
  if(fromStorage){
   pdfToast('Creating Paid-in-full PDF…',null);
