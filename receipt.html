@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.37 · 26.10.24';
+const VERSION='v0.38 · 26.10.25';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1920,6 +1920,24 @@ function issueNo(){
 function newReceipt(){
  if(!confirm('Start a new receipt?\nThis clears the form and issues '+nextPreview()+'.'))return;
  issueNo();renderSheet(true);
+}
+/** Top-bar toggle: Paid-in-full ↔ new regular receipt. */
+function toggleReceiptMode(){
+ if(isPaidKind()){
+  if(!confirm('Start a new receipt?\nThis clears the form and issues '+nextPreview()+'.'))return;
+  const nid=(typeof newReceiptId==='function')?newReceiptId():('r-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8));
+  location.href='receipt.html?id='+encodeURIComponent(nid);
+  return;
+ }
+ splitPayInFullReceipt();
+}
+function modeToggleBtn(){
+ const paid=isPaidKind();
+ return h('button',{
+  onclick:toggleReceiptMode,
+  title:paid?'Click for a new receipt':'Click for Pay in full · split (same serial, details, stamp)',
+  style:'background:#a53a2a;border-color:#a53a2a;color:#fff;font-weight:700'
+ },paid?'Pay in full · split':'New receipt');
 }
 let skipPrinted=false;
 window.addEventListener('beforeprint',()=>{if(editing){editing=false;skipPrinted=true;buildBar();renderSheet();}});
@@ -2919,9 +2937,7 @@ function buildBar(){
  const bar=$('#bar');bar.innerHTML='';
  if(!editing){
   bar.append(h('span',{class:'ttl'},isPaidKind()?'Paid in full':'Purchase receipt'),h('span',{class:'ver'},VERSION),viewSeg(),h('span',{class:'sp'}),langSeg(),
-   h('button',{onclick:newReceipt},'New receipt'),
-   h('button',{onclick:()=>openSiblingReceipt({kind:'regular',view:'one-page'}),title:'Same serial and details as one-page'},'＋ One-page'),
-   h('button',{onclick:splitPayInFullReceipt,title:'Split a Paid-in-full copy with the same serial, details, and stamp',style:'background:#a53a2a;border-color:#a53a2a;color:#fff;font-weight:700'},'Pay in full · split'),
+   modeToggleBtn(),
    h('button',{onclick:()=>{if(confirm('Clear everything typed into the form?'))renderSheet(true);}},'Clear form'),
    h('button',{onclick:toggleEdit},'✎ Edit'),
    h('button',{onclick:()=>window.print()},'Print'),h('button',{class:'pri',onclick:savePdf,title:'Save a clean PDF with no browser date, title or file path'},'⬇ Save PDF'),
