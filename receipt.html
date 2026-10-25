@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.39 · 26.10.25';
+const VERSION='v0.40 · 26.10.25';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1527,7 +1527,7 @@ const SMALL_DEFAULT={paper:'A5',showBalance:true,showQr:true,showSign:true,
   full:{en:'Paid in full',zh:'已全額支付'},part:{en:'Payment received',zh:'已收款項'},sign:{en:'For Arkorigin 鳳仙',zh:'商戶簽署'},scan:{en:'Scan to check this artwork',zh:'掃描查詢此作品'}},
  map:{}};
 function deepFill(t,d){for(const k in d){if(t[k]==null)t[k]=clone(d[k]);else if(d[k]&&typeof d[k]==='object'&&!Array.isArray(d[k])&&typeof t[k]==='object')deepFill(t[k],d[k]);}return t;}
-function ensureSmall(){state.settings.small=deepFill(state.settings.small||{},SMALL_DEFAULT);}
+function ensureSmall(st){st=st||state;if(!st.settings)st.settings={};st.settings.small=deepFill(st.settings.small||{},SMALL_DEFAULT);return st.settings.small;}
 function ensureReceipt(){
  ensureSmall();
  const d=seed.receipt||{prefix:'ARK',digits:3,next:1,year:new Date().getFullYear(),yearly:true,current:'',printed:false,log:[]};
@@ -1706,10 +1706,11 @@ const blockHtml=b=>{const i=state.blocks.indexOf(b),n=state.blocks.length;return
 
 const q=x=>'"'+String(x==null?'':x).replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/\n/g,' ')+'"';
 function theme(){
- setSite();const s=state.settings,r=document.documentElement.style;
+ setSite();try{ensureSmall();}catch(e){}
+ const s=state.settings,r=document.documentElement.style;
  r.setProperty('--navy',s.navy);r.setProperty('--accent',s.accent);r.setProperty('--fs',(+s.fontPt||9.5)+'pt');
  const f='font-family:"Segoe UI",Arial,"Microsoft JhengHei","PingFang TC","Noto Sans CJK TC",sans-serif;font-size:7.5pt';
- if(view==='small'){$('#dyn').textContent=`@page{size:${s.small.paper==='A4'?'A4':'A5'};margin:${s.small.paper==='A4'?'16mm':'11mm'}}`;return;}
+ if(view==='small'){const sp=(s.small&&s.small.paper)||'A5';$('#dyn').textContent=`@page{size:${sp==='A4'?'A4':'A5'};margin:${sp==='A4'?'16mm':'11mm'}}`;return;}
  $('#dyn').textContent=`@page{size:A4;margin:20mm 15mm 16mm;
 @top-left{content:${q(sub(s.headerLeft))};${f};font-weight:700;color:${s.navy}}
 @top-right{content:${q(sub(s.headerRight))};${f};color:#5F6673}
@@ -1765,7 +1766,8 @@ function money(n,like){
  return (m?m[1]:'')+n.toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:2})+(m?m[4]:'');
 }
 function smallHtml(){
- const sm=state.settings.small,L=sm.lbl;
+ try{ensureSmall();}catch(e){}
+ const sm=state.settings.small||SMALL_DEFAULT,L=sm.lbl||SMALL_DEFAULT.lbl;
  const sl=k=>editing?`<span class="en"${A(null,'@s.small.lbl.'+k+'.en','English')}>${esc(L[k].en)}</span> <span class="zh"${A(null,'@s.small.lbl.'+k+'.zh','中文')}>${esc(L[k].zh)}</span>`:bi(L[k].en,L[k].zh);
  const txt=(k)=>`<span class="en"${A(null,'@s.small.'+k+'.en','English')}>${esc(sm[k].en)}</span>${(sm[k].en&&sm[k].zh)||editing?'<br>':''}<span class="zh"${A(null,'@s.small.'+k+'.zh','中文')}>${esc(sm[k].zh)}</span>`;
  const biz=firstVal('bizName')||state.settings.headerLeft||'',contact=firstVal('bizContact'),web=firstVal('bizWeb');
@@ -1868,7 +1870,7 @@ function renderSheet(forceClear){
  applyBody();
  const sh=$('#sheet');
  if(view==='small'){
-  sh.className='sheet small '+(s.small.paper==='A4'?'a4':'a5')+(isPaidKind()?' has-paid-stamp':'');
+  sh.className='sheet small '+(((s.small&&s.small.paper)==='A4')?'a4':'a5')+(isPaidKind()?' has-paid-stamp':'');
   sh.innerHTML=smallHtml();
   if(fp){const n=document.querySelector(`[contenteditable][data-b="${fp[0]}"][data-p="${fp[1]}"]`);if(n){n.focus();placeEnd(n);}}
   return;
@@ -2392,10 +2394,10 @@ function preparePaidInFullClone(st){
  copy.rev=Date.now();
  if(!copy.receipt)copy.receipt={};
  copy.receipt.printed=false;
- if(copy.settings){
-  copy.settings.accent='#a53a2a';
-  copy.settings.headerRight='Paid in Full Receipt 已全額支付收據';
- }
+ if(!copy.settings)copy.settings={};
+ ensureSmall(copy);
+ copy.settings.accent='#a53a2a';
+ copy.settings.headerRight='Paid in Full Receipt 已全額支付收據';
  (copy.blocks||[]).forEach(b=>{
   if(!b)return;
   if(b.id==='b01'&&b.type==='title'){b.en='Paid in Full Receipt';b.zh='已全額支付收據';}
@@ -2524,7 +2526,9 @@ function renderPaidPdfFromState(paidState, forceView){
   view=(forceView==='one-page'||forceView==='small')?'small':'full';
   window.__VERSY_RECEIPT_KIND='paid-in-full';
   formStash={};
+  try{ensureSmall();}catch(e){}
   try{applyPaidKindDefaults();}catch(e){}
+  try{ensureSmall();}catch(e){}
   buildBar();
   renderSheet();
   return makeReceiptPdfBlob(view==='small'?'one-page':'full').then(function(r){
