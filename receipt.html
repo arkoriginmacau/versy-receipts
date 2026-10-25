@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.43 · 26.10.25';
+const VERSION='v0.44 · 26.10.25';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1823,6 +1823,7 @@ function applyPaidKindDefaults(){
  if(!isPaidKind())return;
  state.kind='paid-in-full';
  window.__VERSY_RECEIPT_KIND='paid-in-full';
+ try{view='small';}catch(e){}
  try{
   const q=new URLSearchParams(location.search);
   if(q.get('kind')!=='paid-in-full'){q.set('kind','paid-in-full');history.replaceState(null,'',location.pathname+'?'+q.toString()+location.hash);}
@@ -1936,10 +1937,12 @@ function stampPayInFullOnCurrent(){
  try{snapForm();}catch(e){}
  state.kind='paid-in-full';
  window.__VERSY_RECEIPT_KIND='paid-in-full';
+ view='small'; /* always the one-page receipt layout */
  try{applyPaidKindDefaults();}catch(e){}
  try{
   const q=new URLSearchParams(location.search);
   q.set('kind','paid-in-full');
+  q.set('view','one-page');
   history.replaceState(null,'',location.pathname+'?'+q.toString()+location.hash);
  }catch(e){}
  try{save(true);}catch(e){}
