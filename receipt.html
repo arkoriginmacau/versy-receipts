@@ -15,7 +15,7 @@
     let view = (q.get('view')||'').toLowerCase();
     if(view === 'one-page' || view === 'small' || view === 'onepage') view = 'one-page';
     else if(view === 'full') view = 'full';
-    else view = (kind === 'paid-in-full') ? 'one-page' : '';
+    else view = '';
     if(!id){
       id = 'r-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8);
       q.set('id', id);
@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.44 · 26.10.25';
+const VERSION='v0.45 · 26.10.25';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1823,7 +1823,6 @@ function applyPaidKindDefaults(){
  if(!isPaidKind())return;
  state.kind='paid-in-full';
  window.__VERSY_RECEIPT_KIND='paid-in-full';
- try{view='small';}catch(e){}
  try{
   const q=new URLSearchParams(location.search);
   if(q.get('kind')!=='paid-in-full'){q.set('kind','paid-in-full');history.replaceState(null,'',location.pathname+'?'+q.toString()+location.hash);}
@@ -1937,12 +1936,12 @@ function stampPayInFullOnCurrent(){
  try{snapForm();}catch(e){}
  state.kind='paid-in-full';
  window.__VERSY_RECEIPT_KIND='paid-in-full';
- view='small'; /* always the one-page receipt layout */
+ /* Keep the layout you are on (full or one-page) */
  try{applyPaidKindDefaults();}catch(e){}
  try{
   const q=new URLSearchParams(location.search);
   q.set('kind','paid-in-full');
-  q.set('view','one-page');
+  q.set('view', view==='small'?'one-page':'full');
   history.replaceState(null,'',location.pathname+'?'+q.toString()+location.hash);
  }catch(e){}
  try{save(true);}catch(e){}
@@ -2535,7 +2534,7 @@ function splitPayInFullReceipt(opts){
   list=list.slice(0,50);localStorage.setItem(INDEX_KEY,JSON.stringify(list));
  }catch(e){}
 
- const wantView=(opts.view==='full')?'full':'one-page';
+ const wantView=(opts.view==='one-page'||opts.view==='small')?'one-page':(opts.view==='full'?'full':(view==='small'?'one-page':'full'));
 
  if(fromStorage){
   pdfToast('Creating Paid-in-full PDF…',null);
@@ -2854,7 +2853,7 @@ function storageTab(){
       Promise.resolve(splitPayInFullReceipt({
        receiptNo:file.receiptNo,
        sourceId:rowMeta&&rowMeta.id,
-       view:'one-page',
+       view:file.view==='one-page'?'one-page':'full',
        fromKind:file.kind,
        fromStorage:true
       })).finally(()=>{
