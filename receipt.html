@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.40 · 26.10.25';
+const VERSION='v0.41 · 26.10.25';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1787,7 +1787,7 @@ function smallHtml(){
  return `<div class="sm">
 ${editing?'<div class="sm-sync">Names, amounts and artwork come from the Artwork Purchase Receipt — fill them in there. Click any wording below to change it.</div>':''}
 <div class="sm-head"><div><div class="sm-brand">${esc(biz)}</div><div class="sm-sub">${esc([contact,web].filter(Boolean).join('  ·  '))}</div>${state.settings.address?`<div class="sm-sub">${esc(state.settings.address)}</div>`:''}</div>
-<div class="sm-ttl"><div class="sm-h">${smTitle}${isPaidKind()?' <span class="sm-stamp paid-stamp">'+bi('Paid in full','已全額支付')+'</span>':''}</div><div class="sm-meta">${sl('no')} <b>${esc(no)}</b></div><div class="sm-meta">${sl('date')} <b>${esc(date)}</b></div></div></div>
+<div class="sm-ttl"><div class="sm-h">${smTitle}</div><div class="sm-meta">${sl('no')} <b>${esc(no)}</b></div><div class="sm-meta">${sl('date')} <b>${esc(date)}</b></div></div></div>
 <div class="sm-grid">
 <div class="sm-l">${sl('from')}</div><div class="sm-v"><b>${esc(name)||'—'}</b>${cLine?`<div class="sm-s">${esc(cLine)}</div>`:''}</div>
 <div class="sm-l">${sl('art')}</div><div class="sm-v"><b>${esc(title||desc)||'—'}</b>${parts.length?`<div class="sm-s">${parts.join('  ·  ')}</div>`:''}${desc&&title?`<div class="sm-s sm-desc">${esc(desc).replace(/\n/g,'<br>')}</div>`:''}</div>
@@ -1795,7 +1795,7 @@ ${editing?'<div class="sm-sync">Names, amounts and artwork come from the Artwork
 <div class="sm-l">${sl('paid')}</div><div class="sm-v sm-amt">${esc(paid)||'—'}</div>
 ${sm.showBalance&&(bal||editing)?`<div class="sm-l">${sl('bal')}</div><div class="sm-v sm-amt">${esc(bal)||'<span class="sm-s">(calculated when the price and amount paid are numbers)</span>'}</div>`:''}
 </div>
-${editing?`<div class="sm-stamps"><span class="sm-stamp">${sl('full')}</span><span class="sm-stamp">${sl('part')}</span></div>`:(isPaidKind()?`<div class="sm-stamps"><span class="sm-stamp paid-stamp">${bi('Paid in full','已全額支付')}</span></div>`:(status?`<div class="sm-stamps"><span class="sm-stamp">${bi(L[status].en,L[status].zh)}</span></div>`:''))}${isPaidKind()?'<div class="paid-sheet-stamp sm" aria-hidden="true"><span class="en">PAID IN FULL</span><span class="zh">已全額支付</span></div>':''}
+${editing?`<div class="sm-stamps"><span class="sm-stamp">${sl('full')}</span><span class="sm-stamp">${sl('part')}</span></div>`:(isPaidKind()||status)?`<div class="sm-stamps"><span class="sm-stamp${isPaidKind()||status==='full'?' paid-stamp':''}">${isPaidKind()?bi('Paid in full','已全額支付'):bi(L[status].en,L[status].zh)}</span></div>`:''}
 <p class="sm-note">${txt('note')}</p>
 <div class="sm-foot">${sm.showSign?`<div class="sm-sign">${merchantSigHtml('sm')}<div class="lb">${sl('sign')}</div></div>`:'<div></div>'}${qr?`<figure class="sm-qr">${qr}<figcaption>${sl('scan')}</figcaption></figure>`:''}</div>
 <p class="sm-terms">${txt('terms')}</p>
@@ -1870,13 +1870,13 @@ function renderSheet(forceClear){
  applyBody();
  const sh=$('#sheet');
  if(view==='small'){
-  sh.className='sheet small '+(((s.small&&s.small.paper)==='A4')?'a4':'a5')+(isPaidKind()?' has-paid-stamp':'');
+  sh.className='sheet small '+(((s.small&&s.small.paper)==='A4')?'a4':'a5');
   sh.innerHTML=smallHtml();
   if(fp){const n=document.querySelector(`[contenteditable][data-b="${fp[0]}"][data-p="${fp[1]}"]`);if(n){n.focus();placeEnd(n);}}
   return;
  }
- sh.className='sheet'+(isPaidKind()?' has-paid-stamp':'');
- $('#sheet').innerHTML=`<div class="sh-head"><b${A(null,'@s.headerLeft','Header (left)')}>${esc(s.headerLeft)}</b><span${A(null,'@s.headerRight','Header (right)')}>${esc(s.headerRight)}</span></div><div class="blocks">${state.blocks.filter(b=>editing||!b.hidden).map(blockHtml).join('')}</div>${editing?'<div class="endadd"><button class="addb" data-act="b-add-end">+ Add block</button></div>':''}<div class="sh-foot"><span${A(null,'@s.footerLeft','Footer')}>${esc(s.footerLeft)}</span></div>${isPaidKind()?'<div class="paid-sheet-stamp" aria-hidden="true"><span class="en">PAID IN FULL</span><span class="zh">已全額支付</span></div>':''}`;
+ sh.className='sheet';
+ $('#sheet').innerHTML=`<div class="sh-head"><b${A(null,'@s.headerLeft','Header (left)')}>${esc(s.headerLeft)}</b><span${A(null,'@s.headerRight','Header (right)')}>${esc(s.headerRight)}</span></div><div class="blocks">${state.blocks.filter(b=>editing||!b.hidden).map(blockHtml).join('')}</div>${editing?'<div class="endadd"><button class="addb" data-act="b-add-end">+ Add block</button></div>':''}<div class="sh-foot"><span${A(null,'@s.footerLeft','Footer')}>${esc(s.footerLeft)}</span></div>`;
  restoreForm();applyStrikes();
  if(fp){const n=document.querySelector(`[contenteditable][data-b="${fp[0]}"][data-p="${fp[1]}"]`);if(n){n.focus();placeEnd(n);}}
 }
