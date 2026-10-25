@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.42 · 26.10.25';
+const VERSION='v0.43 · 26.10.25';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1519,6 +1519,8 @@ function migrate(st){
  return st;
 }
 state=migrate(state);
+try{if(state.formStash)formStash=Object.assign({},state.formStash);}catch(e){}
+
 const SMALL_DEFAULT={paper:'A5',showBalance:true,showQr:true,showSign:true,
  note:{en:'Thank you for your purchase. Please keep this receipt for your records.',zh:'多謝惠顧，請妥善保存此收據。'},
  terms:{en:'All sales are final. Deposits are non-refundable.',zh:'所有畫作均不接受退貨；訂金不予退還。'},
@@ -1572,7 +1574,7 @@ let lang='both';try{lang=localStorage.getItem('arkorigin-lang')||'both';}catch(e
 let cur=null,dirty=false;
 
 function load(){try{const raw=localStorage.getItem(KEY);if(raw){const s=JSON.parse(raw);if(s&&Array.isArray(s.blocks)&&s.rev>(seed.rev||0))return s;}}catch(e){}return clone(seed);}
-function save(quiet){state.rev=Date.now();if(!quiet)dirty=true;try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}updStatus();try{const b=(state.blocks&&state.blocks[0])||{};let title='';try{title=(firstVal('buyerName')||firstVal('title')||b.en||'').toString().slice(0,80);}catch(e){title=(b.en||'').toString().slice(0,80);}const no=receiptNoStr(state.receipt&&state.receipt.current);const kind=receiptKind();window.__VERSY_RECEIPT_KIND=kind;window.__versyUpsertIndex&&window.__versyUpsertIndex({title:title||(kind==='paid-in-full'?'Paid in full':'Untitled receipt'),receiptNo:no,mode:state.ab||'',kind:kind});}catch(_e){}}
+function save(quiet){try{snapForm();}catch(e){}try{state.formStash=Object.assign({},formStash);}catch(e){}state.rev=Date.now();if(!quiet)dirty=true;try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}updStatus();try{const b=(state.blocks&&state.blocks[0])||{};let title='';try{title=(firstVal('buyerName')||firstVal('title')||b.en||'').toString().slice(0,80);}catch(e){title=(b.en||'').toString().slice(0,80);}const no=receiptNoStr(state.receipt&&state.receipt.current);const kind=receiptKind();window.__VERSY_RECEIPT_KIND=kind;window.__versyUpsertIndex&&window.__versyUpsertIndex({title:title||(kind==='paid-in-full'?'Paid in full':'Untitled receipt'),receiptNo:no,mode:state.ab||'',kind:kind});}catch(_e){}}
 let saveT;const saveLater=()=>{clearTimeout(saveT);saveT=setTimeout(save,250);};
 
 /* ---------- path helpers (in-place editing binds text to model paths) ---------- */
@@ -1782,7 +1784,7 @@ function smallHtml(){
  if(size||editing)parts.push(`${sl('size')} <b>${esc(size)}</b>`);
  if(med.length||editing)parts.push(`${sl('medium')} <b>${med.join(', ')}</b>`);
  const status=(isPaidKind()||full)?'full':(paid?'part':'');
- const smTitle=isPaidKind()?bi('Paid in Full Receipt','已全額支付收據'):sl('title');
+ const smTitle=sl('title');
  const qr=sm.showQr?qrSvg('{website}'):'';
  return `<div class="sm">
 ${editing?'<div class="sm-sync">Names, amounts and artwork come from the Artwork Purchase Receipt — fill them in there. Click any wording below to change it.</div>':''}
@@ -2404,7 +2406,7 @@ function openSiblingReceipt(opts){
  if(wantKind==='paid-in-full')url+='&kind=paid-in-full';
  location.href=url;
 }
-function preparePaidInFullClone(st){
+function preparePaidInFullClone(st, stash){
  const copy=clone(st);
  copy.kind='paid-in-full';
  copy.stamp='paid-in-full';
@@ -2414,15 +2416,39 @@ function preparePaidInFullClone(st){
  if(!copy.settings)copy.settings={};
  ensureSmall(copy);
  copy.settings.accent='#a53a2a';
- copy.settings.headerRight='Paid in Full Receipt 已全額支付收據';
+ /* Keep one-page title as Receipt — stamp says Paid in full */
+ if(copy.settings.headerRight&&/paid in full/i.test(copy.settings.headerRight)){
+  /* leave headerRight for full sheet only */
+ }
+ const fs=Object.assign({}, stash||st.formStash||{});
+ /* tick Paid in full + set Amount Paid = price when empty */
+ let price='';
+ for(const x of (function(){const out=[];(copy.blocks||[]).forEach(b=>{if(b&&b.type==='fields')(b.rows||[]).forEach((row,i)=>out.push({b,i,row}));});return out;})()){
+  const row=x.row||{};
+  if((row.role==='price')||/^Price|總價|總額$/i.test((row.en||'').trim())||(row.rid&&String(row.rid).toLowerCase()==='price')){
+   const v=fs[x.b.id+':'+x.i]; if(v&&v.v)price=String(v.v);
+  }
+ }
  (copy.blocks||[]).forEach(b=>{
   if(!b)return;
-  if(b.id==='b01'&&b.type==='title'){b.en='Paid in Full Receipt';b.zh='已全額支付收據';}
   if(b.id==='b06'&&b.type==='note'){b.en='This receipt confirms the artwork has been paid in full.';b.zh='本收據確認該藝術品已全額支付。';}
-  if(b.id==='b10'&&b.type==='heading'){b.en='Settlement';b.zh='結算';}
-  if(b.id==='b11'&&b.type==='subheading'){b.en='Final payment';b.zh='最終付款';}
   if(b.id==='b13'||b.id==='b14'){b.hidden=true;}
+  if(b.type!=='fields')return;
+  (b.rows||[]).forEach((r,i)=>{
+   if(r.kind==='checks')(r.options||[]).forEach((o,j)=>{
+    if(o.id==='paidfull'||/^paid in full$/i.test((o.en||'').trim())) fs[b.id+':'+i+':'+j]={c:true,v:''};
+   });
+   if(/^Amount Paid|已付金額$/i.test((r.en||'').trim())||r.en==='Amount Paid'){
+    const cur=fs[b.id+':'+i];
+    if(price&&(!cur||!cur.v)) fs[b.id+':'+i]={c:false,v:price};
+   }
+   if((r.role==='paid')||(r.rid&&String(r.rid).toLowerCase()==='paid')){
+    const cur=fs[b.id+':'+i];
+    if(price&&(!cur||!cur.v)) fs[b.id+':'+i]={c:false,v:price};
+   }
+  });
  });
+ copy.formStash=fs;
  return copy;
 }
 /** Split current receipt into a Paid-in-full sibling (same serial + details + stamp). */
@@ -2432,6 +2458,18 @@ function splitPayInFullReceipt(opts){
  let sourceId=opts.sourceId||null;
  let st=opts.sourceState||null;
  let serial=receiptNoStr(opts.receiptNo||'');
+ let stash=opts.formStash||null;
+
+ /* Prefer the open receipt when the serial matches — keeps typed fields */
+ try{
+  const curNo=receiptNoStr(state.receipt&&state.receipt.current);
+  if(serial&&curNo&&String(serial).toLowerCase()===String(curNo).toLowerCase()){
+   try{snapForm();}catch(e){}
+   st=clone(state);
+   stash=Object.assign({}, formStash);
+   sourceId=window.__VERSY_RECEIPT_ID;
+  }
+ }catch(e){}
 
  if(!st&&sourceId)st=loadReceiptStateById(sourceId);
  if(!st&&serial){
@@ -2443,20 +2481,20 @@ function splitPayInFullReceipt(opts){
   if(!serial||String(serial).toLowerCase()===String(curNo).toLowerCase()){
    try{save(true);}catch(e){}
    st=clone(state);
+   stash=Object.assign({}, formStash);
    serial=serial||curNo;
    sourceId=window.__VERSY_RECEIPT_ID;
   }
  }
- /* Storage split: never block — build from seed if no editor state */
+ if(st&&!stash) stash=Object.assign({}, (st.formStash||{}), formStash||{});
+ /* Last resort only — warn instead of silent blank receipt */
  if(!st&&serial&&fromStorage){
-  st=clone(seed);
-  if(!st.receipt)st.receipt={};
-  st.receipt.current=serial;
+  pdfToast('Open that receipt first, then Pay in full — no saved details for '+serial,false);
+  return Promise.resolve(null);
  }
  if(!st&&serial){
-  st=clone(seed);
-  if(!st.receipt)st.receipt={};
-  st.receipt.current=serial;
+  alert('Open the receipt first so Pay in full can stamp your details.');
+  return;
  }
  if(!st){
   if(fromStorage){pdfToast('Could not build Paid-in-full PDF',false);return Promise.resolve(null);}
@@ -2481,7 +2519,7 @@ function splitPayInFullReceipt(opts){
   return;
  }
 
- const copy=preparePaidInFullClone(st);
+ const copy=preparePaidInFullClone(st, stash);
  copy.receipt=copy.receipt||{};
  copy.receipt.current=serial;
  copy.receipt.printed=false;
@@ -2542,7 +2580,7 @@ function renderPaidPdfFromState(paidState, forceView){
   editing=false;
   view=(forceView==='one-page'||forceView==='small')?'small':'full';
   window.__VERSY_RECEIPT_KIND='paid-in-full';
-  formStash={};
+  formStash=Object.assign({}, (paidState&&paidState.formStash)||{});
   try{ensureSmall();}catch(e){}
   try{applyPaidKindDefaults();}catch(e){}
   try{ensureSmall();}catch(e){}
@@ -2813,7 +2851,7 @@ function storageTab(){
       Promise.resolve(splitPayInFullReceipt({
        receiptNo:file.receiptNo,
        sourceId:rowMeta&&rowMeta.id,
-       view:file.view==='one-page'?'one-page':'full',
+       view:'one-page',
        fromKind:file.kind,
        fromStorage:true
       })).finally(()=>{
