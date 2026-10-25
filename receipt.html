@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.41 · 26.10.25';
+const VERSION='v0.42 · 26.10.25';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1821,7 +1821,6 @@ function applyPaidKindDefaults(){
  if(!isPaidKind())return;
  state.kind='paid-in-full';
  window.__VERSY_RECEIPT_KIND='paid-in-full';
- try{if(typeof view!=='undefined')view='small';}catch(e){}
  try{
   const q=new URLSearchParams(location.search);
   if(q.get('kind')!=='paid-in-full'){q.set('kind','paid-in-full');history.replaceState(null,'',location.pathname+'?'+q.toString()+location.hash);}
@@ -1922,25 +1921,43 @@ function issueNo(){
 }
 function newReceipt(){
  if(!confirm('Start a new receipt?\nThis clears the form and issues '+nextPreview()+'.'))return;
- issueNo();renderSheet(true);
-}
-/** Top-bar toggle: Paid-in-full ↔ new regular receipt. */
-function toggleReceiptMode(){
  if(isPaidKind()){
-  if(!confirm('Start a new receipt?\nThis clears the form and issues '+nextPreview()+'.'))return;
   const nid=(typeof newReceiptId==='function')?newReceiptId():('r-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8));
   location.href='receipt.html?id='+encodeURIComponent(nid);
   return;
  }
- splitPayInFullReceipt({view:'one-page'});
+ issueNo();renderSheet(true);buildBar();
 }
-function modeToggleBtn(){
+/** Stamp Paid in full on the receipt currently open (same view, no sibling jump). */
+function stampPayInFullOnCurrent(){
+ if(isPaidKind()){alert('This receipt is already Paid in full.');return;}
+ try{snapForm();}catch(e){}
+ state.kind='paid-in-full';
+ window.__VERSY_RECEIPT_KIND='paid-in-full';
+ try{applyPaidKindDefaults();}catch(e){}
+ try{
+  const q=new URLSearchParams(location.search);
+  q.set('kind','paid-in-full');
+  history.replaceState(null,'',location.pathname+'?'+q.toString()+location.hash);
+ }catch(e){}
+ try{save(true);}catch(e){}
+ buildBar();renderSheet();window.scrollTo({top:0});
+}
+function newReceiptBtn(){
+ return h('button',{
+  onclick:newReceipt,
+  title:'Start a new receipt',
+  style:'background:#a53a2a;border-color:#a53a2a;color:#fff;font-weight:700'
+ },'New receipt');
+}
+function payInFullBtn(){
  const paid=isPaidKind();
  return h('button',{
-  onclick:toggleReceiptMode,
-  title:paid?'Click for a new receipt':'Click for Pay in full · split (same serial, details, stamp)',
-  style:'background:#a53a2a;border-color:#a53a2a;color:#fff;font-weight:700'
- },paid?'Pay in full · split':'New receipt');
+  onclick:stampPayInFullOnCurrent,
+  disabled:paid||undefined,
+  title:paid?'Already Paid in full':'Stamp Paid in full on this receipt',
+  style:paid?'opacity:.55;cursor:default;background:#a53a2a;border-color:#a53a2a;color:#fff;font-weight:700':'background:#a53a2a;border-color:#a53a2a;color:#fff;font-weight:700'
+ },'Pay in full · split');
 }
 let skipPrinted=false;
 window.addEventListener('beforeprint',()=>{if(editing){editing=false;skipPrinted=true;buildBar();renderSheet();}});
@@ -2942,7 +2959,7 @@ function buildBar(){
  const bar=$('#bar');bar.innerHTML='';
  if(!editing){
   bar.append(h('span',{class:'ttl'},isPaidKind()?'Paid in full':'Purchase receipt'),h('span',{class:'ver'},VERSION),viewSeg(),h('span',{class:'sp'}),langSeg(),
-   modeToggleBtn(),
+   newReceiptBtn(),payInFullBtn(),
    h('button',{onclick:()=>{if(confirm('Clear everything typed into the form?'))renderSheet(true);}},'Clear form'),
    h('button',{onclick:toggleEdit},'✎ Edit'),
    h('button',{onclick:()=>window.print()},'Print'),h('button',{class:'pri',onclick:savePdf,title:'Save a clean PDF with no browser date, title or file path'},'⬇ Save PDF'),
