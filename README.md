@@ -9,13 +9,14 @@ Hosted **Artwork Purchase Receipt** (Versy / paperworks) for Ark’s Coffee Shop
 - Storage API (Cloudflare Worker + R2): https://versy-receipts.arkoriginmacau.workers.dev
 - Coffee Shop tile: **Versy receipts** (Paperworks)
 
-## Features (v0.37)
+## Features (v0.38)
 
 - **Regular** purchase receipt (A/B finished vs custom, bilingual, one-page view)
 - **Paid in full / 已全額支付** — same wrapper/layout/ends; settlement body; Gallery sold red `#a53a2a`
 - **Default merchant signature** on every kind (⋯ → Default signature). Stored in `localStorage` key `versy-merchant-sig`
 - **Save PDF** via html2pdf from jsDelivr CDN
 - **Storage** — drop a PDF or store the current receipt; one line per receipt number; click to expand files
+- **Mode toggle** — one sold-red bar button flips **New receipt** ↔ **Pay in full · split** (separate New receipt / ＋ One-page bar buttons removed)
 - **Pay in full · split** — from a Storage row, auto-adds a stamped Paid-in-full PDF under the same number
 - **Cloud archive** on **Cloudflare R2** (Worker API). IndexedDB stays as offline fallback when cloud fails
 - **Hold 3s to delete** — sold-red blink on a Storage file line (or number line for the whole folder); releases early cancel
@@ -67,5 +68,5 @@ Do **not** commit secrets. GitHub Pages keeps serving static HTML; the Worker ho
 
 ## Local / host notes
 
-- Template version shown in the top bar (`v0.37 · 26.10.24`)
+- Template version shown in the top bar (`v0.38 · 26.10.25`)
 - Host shell — per-id localStorage + index; `?kind=paid-in-full` for settlement receipts
