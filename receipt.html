@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.46 · 26.10.26';
+const VERSION='v0.47 · 26.10.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -2097,8 +2097,11 @@ function remoteKeysFor(file){
  add(file.pathname);add(file.key);
  const no=file.receiptNo;
  if(no){
-  add('receipts/'+no+'/'+displayPdfName(no, file.view||'full', file.kind||'regular'));
-  add(stablePathname(no, file.view||'full', file.kind||'regular'));
+  [no,String(no).toLowerCase(),String(no).toUpperCase()].forEach(n=>{
+   add('receipts/'+n+'/'+displayPdfName(no, file.view||'full', file.kind||'regular'));
+   add('receipts/'+n+'/'+displayPdfName(String(no).toLowerCase(), file.view||'full', file.kind||'regular'));
+   add(stablePathname(n, file.view||'full', file.kind||'regular'));
+  });
  }
  return keys;
 }
@@ -2252,7 +2255,11 @@ function storageMode(){
 }
 function storeReceiptPdf(blob, opts){
  opts=opts||{};
- const receiptNo=opts.receiptNo||'receipt';
+ const receiptNo=normalizeReceiptNo(opts.receiptNo)||normalizeReceiptNo(opts.filename)||normalizeReceiptNo(state.receipt&&state.receipt.current);
+ if(!receiptNo){
+  pdfToast('Not stored — no ARK- receipt number',false);
+  return Promise.resolve(null);
+ }
  const kind=opts.kind==='paid-in-full'?'paid-in-full':'regular';
  const view=opts.view==='one-page'?'one-page':'full';
  const pathname=stablePathname(receiptNo, view, kind);
@@ -2342,14 +2349,17 @@ function storeCurrentReceiptToStorage(forceView){
 function looksLikeReceiptNo(s){
  return /^ARK-\d{4}-\d+/i.test(String(s||'').trim());
 }
+function normalizeReceiptNo(s){
+ const m=String(s||'').match(/ARK-\d{4}-\d+/i);
+ return m?m[0].toUpperCase():'';
+}
 function isJunkReceiptFolder(no){
  const s=String(no||'').trim();
  if(!s||s==='?'||s==='receipt')return true;
- if(looksLikeReceiptNo(s))return false;
+ if(normalizeReceiptNo(s)===s.toUpperCase())return false;
  if(/^TEMP\b/i.test(s))return true;
  if(/Artwork Purchase Receipt/i.test(s))return true;
- if(s.length>40)return true;
- return false;
+ return true;
 }
 function parseReceiptMetaFromFilename(name){
  const base=String(name||'').replace(/\.pdf$/i,'');
@@ -2636,16 +2646,13 @@ function siblingButtonsFor(receiptNo, sourceId){
 }
 function ingestPdfFileToStorage(file, fallbackNo){
  const meta=parseReceiptMetaFromFilename(file.name);
- let receiptNo=meta.receiptNo&&meta.receiptNo!=='receipt'?meta.receiptNo:'';
- if(!looksLikeReceiptNo(receiptNo)){
-  receiptNo=fallbackNo||(state.receipt&&state.receipt.current)||'';
- }
- if(!looksLikeReceiptNo(receiptNo)){
+ let receiptNo=normalizeReceiptNo(meta.receiptNo)||normalizeReceiptNo(fallbackNo)||normalizeReceiptNo(state.receipt&&state.receipt.current);
+ if(!receiptNo){
   return Promise.reject(new Error('Drop needs an ARK- receipt number (open that receipt first)'));
  }
  return file.arrayBuffer().then(buf=>{
   const blob=new Blob([buf],{type:'application/pdf'});
-  return storeReceiptPdf(blob,{receiptNo,kind:meta.kind,view:meta.view,filename:file.name});
+  return storeReceiptPdf(blob,{receiptNo,kind:meta.kind,view:meta.view,filename:displayPdfName(receiptNo,meta.view,meta.kind)});
  });
 }
 function handleStorageDrop(dt, fallbackNo, onDone){
@@ -2967,12 +2974,14 @@ function storageTab(){
    fetch(api).then(r=>r.json()).then(data=>{
     const remote=(data&&data.folders)||[];
     const merged=new Map();
-    locals.forEach(f=>merged.set(f.receiptNo,{...f}));
+    locals.forEach(f=>merged.set(String(f.receiptNo).toUpperCase(),{...f}));
     remote.forEach(f=>{
-     const cur=merged.get(f.receiptNo)||{receiptNo:f.receiptNo,count:0,latest:0};
+     const rno=normalizeReceiptNo(f.receiptNo);
+     if(!rno||isJunkReceiptFolder(rno))return;
+     const cur=merged.get(rno)||{receiptNo:rno,count:0,latest:0};
      cur.count=(cur.count||0)+(f.count||0);
      cur.latest=Math.max(cur.latest||0,f.latest||0);
-     merged.set(f.receiptNo,cur);
+     merged.set(rno,cur);
     });
     paint([...merged.values()].sort((a,b)=>(b.latest||0)-(a.latest||0)));
    }).catch(()=>paint(locals));
