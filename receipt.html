@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.50 · 26.10.26';
+const VERSION='v0.51 · 26.10.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -2672,7 +2672,7 @@ function siblingButtonsFor(receiptNo, sourceId){
  box.append(
   h('button',{type:'button',title:'Same serial and details, open as full receipt',onclick:()=>openSiblingReceipt({kind:'regular',view:'full',receiptNo:no,sourceId})},'＋ Full (same serial)'),
   h('button',{type:'button',title:'Same serial and details, open as one-page receipt',onclick:()=>openSiblingReceipt({kind:'regular',view:'one-page',receiptNo:no,sourceId})},'＋ One-page (same serial)'),
-  h('button',{type:'button',class:'pri',style:'background:#a53a2a;border-color:#a53a2a;color:#fff',title:'Same serial and details, paid-in-full settlement',onclick:()=>openSiblingReceipt({kind:'paid-in-full',view:'full',receiptNo:no,sourceId})},'＋ Paid in full (same serial)')
+  h('button',{type:'button',class:'pri',style:'background:#a53a2a;border-color:#a53a2a;color:#fff',title:'Same serial and details, paid-in-full settlement',onclick:()=>openSiblingReceipt({kind:'paid-in-full',view:view==='small'?'one-page':'full',receiptNo:no,sourceId})},'＋ Paid in full (same serial)')
  );
  return box;
 }
@@ -2938,7 +2938,7 @@ function storageTab(){
       Promise.resolve(splitPayInFullReceipt({
        receiptNo:file.receiptNo,
        sourceId:rowMeta&&rowMeta.id,
-       view:file.view==='one-page'?'one-page':'full',
+       view:(file.view==='one-page'||file.view==='small'||(!file.view&&/^(One-page-receipt|Paid-in-full-one-page)/i.test(String(file.filename||file.name||''))))?'one-page':'full',
        fromKind:file.kind,
        fromStorage:true
       })).finally(()=>{
