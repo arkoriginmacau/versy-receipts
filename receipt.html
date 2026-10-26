@@ -2966,7 +2966,10 @@ function storageTab(){
     const expandWant=String(expandNo||'').toLowerCase();
     folders.forEach(f=>{
      const row=h('div',{class:'stor-tree-row'});
-     const line=h('button',{type:'button',class:'stor-tree-line'}, (f.receiptNo||'?')+(f.count?(' · '+f.count):''));
+     const line=h('button',{type:'button',class:'stor-tree-line'},
+      h('span',{class:'stor-folder-icon','aria-hidden':'true'}),
+      h('span',{},(f.receiptNo||'?')+(f.count?(' · '+f.count):''))
+     );
      line.title='Click to expand · hold 3s to delete all PDFs for this number';
      const kids=h('div',{class:'stor-tree-kids'});
      kids.hidden=true;
@@ -3443,7 +3446,9 @@ body.kind-paid section[data-bid="b13"],body.kind-paid section[data-bid="b14"]{di
 .stor-drag-handle:active{cursor:grabbing}
 .stor-list{display:grid;gap:6px}
 .stor-tree-row{border:1px solid var(--line);border-radius:8px;background:#fff;overflow:hidden}
-.stor-tree-line{width:100%;text-align:left;font:600 13px system-ui;padding:10px 12px;border:0;background:#fff;cursor:pointer;color:var(--navy)}
+.stor-tree-line{width:100%;display:flex;align-items:center;gap:7px;text-align:left;font:600 13px system-ui;padding:10px 12px;border:0;background:#fff;cursor:pointer;color:var(--navy)}
+.stor-folder-icon{position:relative;display:inline-block;flex:none;width:14px;height:9px;margin-top:2px;border-radius:1px;background:#2878c7}
+.stor-folder-icon::before{content:"";position:absolute;left:1px;top:-3px;width:6px;height:4px;border-radius:1px 1px 0 0;background:inherit}
 .stor-tree-line:hover{background:#fafbfc}
 .stor-tree-row.open .stor-tree-line{border-bottom:1px solid var(--line);background:#f8f9fb}
 .stor-tree-kids{padding:8px 12px 10px 22px;display:grid;gap:6px;background:#fcfcfd}
