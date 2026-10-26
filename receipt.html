@@ -1505,7 +1505,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.55 · 26.10.26';
+const VERSION='v0.56 · 26.10.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1647,11 +1647,9 @@ const SIG_KEY='versy-merchant-sig';
 const DEFAULT_SIG_SVG=`data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="280" height="70" viewBox="0 0 280 70"><text x="8" y="48" font-family="Segoe Script,Brush Script MT,cursive" font-size="28" fill="#1F2A44">Arkorigin</text><text x="8" y="64" font-family="Microsoft JhengHei,sans-serif" font-size="11" fill="#5F6673">鳳仙</text></svg>')}`;
 function getMerchantSig(){
  try{const s=localStorage.getItem(SIG_KEY);if(s)return s;}catch(e){}
- if(state&&state.settings&&state.settings.merchantSig)return state.settings.merchantSig;
  return DEFAULT_SIG_SVG;
 }
 function setMerchantSig(dataUrl){
- if(state&&state.settings)state.settings.merchantSig=dataUrl||'';
  try{if(dataUrl)localStorage.setItem(SIG_KEY,dataUrl);else localStorage.removeItem(SIG_KEY);}catch(e){}
  save(true);renderSheet();
 }
@@ -1663,29 +1661,35 @@ function isMerchantSigLine(line){
  const en=((line&&line.en)||'').toLowerCase();
  return /arkorigin|merchant|for ark|商戶|鳳仙/.test(en)||/商戶|鳳仙/.test((line&&line.zh)||'');
 }
-function pickSigFile(){
- const inp=$('#imgf');if(!inp)return;
- inp.accept='image/*';
- inp.onchange=function(){
-  const f=inp.files&&inp.files[0];inp.value='';
-  if(!f)return;
-  const r=new FileReader();
-  r.onload=()=>{setMerchantSig(String(r.result||''));pdfToast('Default signature updated',true);};
-  r.readAsDataURL(f);
- };
- inp.click();
-}
 function signatureDialog(){
- openDlg('Default signature 預設簽名',()=>h('div',{style:'display:grid;gap:12px'},
-  h('p',{class:'hint'},'Shown on every electronic receipt (full, one-page, paid-in-full) above the merchant line. Print and Save PDF include it.'),
-  h('div',{style:'background:#fafbfc;border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center'},
-   h('img',{src:getMerchantSig(),alt:'preview',style:'max-height:80px;max-width:100%'})),
-  h('div',{style:'display:flex;gap:8px;flex-wrap:wrap'},
-   h('button',{class:'pri',onclick:()=>{pickSigFile();}},'Upload image'),
-   h('button',{onclick:()=>{setMerchantSig('');refreshDlg();renderSheet();}},'Reset to placeholder'),
-   h('button',{onclick:()=>$('#dlg').close()},'Done'))
- ));
+ let draft=getMerchantSig();
+ openDlg('Default signature 預設簽名',()=>{
+  const preview=h('img',{class:'sig-preview',src:draft,alt:'Signature preview',style:'max-height:80px;max-width:100%'});
+  const canvas=h('canvas',{width:'560',height:'140','aria-label':'Draw signature',style:'display:block;width:100%;height:auto;max-height:140px;touch-action:none;background:#fff;border:1px solid var(--line);border-radius:6px;cursor:crosshair'});
+  const ctx=canvas.getContext('2d');ctx.strokeStyle='#1F2A44';ctx.fillStyle='#1F2A44';ctx.lineWidth=3;ctx.lineCap='round';ctx.lineJoin='round';
+  let drawing=false,ink=false;
+  const point=e=>{const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height};};
+  const update=()=>{draft=canvas.toDataURL('image/png');preview.src=draft;};
+  canvas.addEventListener('pointerdown',e=>{e.preventDefault();if(!ink)ctx.clearRect(0,0,canvas.width,canvas.height);ink=true;drawing=true;canvas.setPointerCapture(e.pointerId);const p=point(e);ctx.beginPath();ctx.arc(p.x,p.y,1.5,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.moveTo(p.x,p.y);update();});
+  canvas.addEventListener('pointermove',e=>{if(!drawing)return;const p=point(e);ctx.lineTo(p.x,p.y);ctx.stroke();update();});
+  canvas.addEventListener('pointerup',()=>{drawing=false;});
+  canvas.addEventListener('pointercancel',()=>{drawing=false;});
+  const inp=$('#imgf');
+  const upload=()=>{if(!inp)return;inp.accept='image/*';inp.onchange=async()=>{const f=inp.files&&inp.files[0];inp.value='';if(!f)return;try{draft=await resizeImg(f,1200);ink=false;ctx.clearRect(0,0,canvas.width,canvas.height);preview.src=draft;}catch(e){alert('Could not read that signature image.');}};inp.click();};
+  const clearDrawing=()=>{ink=false;ctx.clearRect(0,0,canvas.width,canvas.height);draft=getMerchantSig();preview.src=draft;};
+  return h('div',{style:'display:grid;gap:12px'},
+   h('p',{class:'hint'},'Draw or upload a signature, preview it, then Save. It appears on every electronic receipt (full, one-page, paid-in-full), including Print and Save PDF.'),
+   h('div',{style:'background:#fafbfc;border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center'},preview),
+   h('label',{class:'hint'},'Draw signature',canvas),
+   h('div',{style:'display:flex;gap:8px;flex-wrap:wrap'},
+    h('button',{onclick:upload},'Upload image'),
+    h('button',{onclick:clearDrawing},'Clear drawing'),
+    h('button',{onclick:()=>{if(!confirm('Clear the saved default signature? Receipts will use the built-in placeholder.'))return;setMerchantSig('');draft=getMerchantSig();refreshDlg();}},'Clear default'),
+    h('button',{class:'pri',onclick:()=>{setMerchantSig(draft);$('#dlg').close();pdfToast('Default signature saved',true);}},'Save'))
+  );
+ });
 }
+window.addEventListener('storage',e=>{if(e.key===SIG_KEY)renderSheet();});
 
 const R={
  title:b=>{const paid=isPaidKind();const en=paid?'Paid in Full Receipt':b.en;const zh=paid?'已全額支付收據':b.zh;return `<div class="title${paid?' paid-kind':''}">${paid?'<div class="paid-badge"><span class="en">Paid in full</span><span class="sep"> · </span><span class="zh">已全額支付</span></div>':''}<h1><span class="en"${A(b,'en','Title')}>${esc(en)}</span></h1><div class="z1 zh"${A(b,'zh','中文標題')}>${esc(zh)}</div><div class="brand"${A(b,'brand','Brand line')}>${esc(b.brand)}</div>${(state.settings.address||editing)?`<div class="addr"${A(null,'@s.address','Address')}>${esc(state.settings.address||'')}</div>`:''}</div>`;},
