@@ -136,6 +136,7 @@ label.f{display:grid;gap:3px;font-size:11px;color:var(--muted)}
 .pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .cbx{font-size:12px;display:flex;gap:6px;align-items:center;color:#111}
 .fv input.rno{font-weight:700;color:var(--navy);font-size:8pt;letter-spacing:0;min-width:0;max-width:100%;cursor:default}
+.editing .fv input.rno{cursor:text}
 .sg .ln{display:flex;align-items:flex-end}
 .sg .ln .dt{width:100%;border:0;background:transparent;font:inherit;padding:0 0 3px;outline:none;text-align:center;color:#111}
 .sg .lb.dl{display:flex;justify-content:space-between;align-items:center;gap:8px}
@@ -1505,7 +1506,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.55 · 26.10.26';
+const VERSION='v0.56 · 26.10.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1575,7 +1576,7 @@ function migrateV8(){
 if(state.settings.address==null)state.settings.address='Block 6D, Nam Sun Garden, Avenida de Kwong Tung No. 116A–142F, Taipa, Macao';
 if(!state.receipt.rnd){state.receipt.rnd=1;state.receipt.digits=6;}
 migrateV7();migrateV8();setSite();
-let editing=false,view='full';
+let editing=false,view='full',receiptNoDraft='';
 let lang='both';try{lang=localStorage.getItem('arkorigin-lang')||'both';}catch(e){}
 let cur=null,dirty=false;
 
@@ -1612,7 +1613,7 @@ const MODE_SYM={'':'○',blank:'▁',auto:'⇄'},MODE_TIP={'':'Nothing typed aft
 function val(r,b,i){
  const k=r.kind||'text',a=esc((r.en||'')+' '+(r.zh||'')).trim();
  if(k==='static')return editing?`<span${A(b,`rows.${i}.value`,'Fixed text')}>${esc(r.value)}</span>`:esc(r.value);
- if(k==='receiptno')return `<input type="text" class="rno" readonly value="${esc((state.receipt&&state.receipt.current)||'')}" placeholder="Issued automatically" aria-label="Receipt No.">`;
+ if(k==='receiptno')return `<input type="text" class="rno" ${editing?'':'readonly'} value="${esc(editing?receiptNoDraft:(state.receipt&&state.receipt.current)||'')}" placeholder="Issued automatically" aria-label="Receipt No." maxlength="15">`;
  if(k==='date')return `<div class="dtw" data-dt><input type="text" class="dt" data-fk="${b.id}:${i}" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="yyyy-mm-dd" aria-label="${a}"><button type="button" class="today">Today</button></div>`;
  if(k==='area')return `<textarea rows="3" data-fk="${b.id}:${i}" aria-label="${a}"></textarea>`;
  if(k==='checks'){
@@ -1827,6 +1828,15 @@ function receiptNoStr(v){
  if(v==null||v==='')return '';
  if(typeof v==='object')return String(v.current||v.no||v.receiptNo||v.number||'');
  return String(v);
+}
+function commitReceiptNo(){
+ const input=$('#sheet .rno'),value=String(input?input.value:receiptNoDraft).trim();
+ if(!/^ARK-\d{4}-\d{6}$/i.test(value)){
+  if(input){input.setCustomValidity('Use format ARK-YYYY-NNNNNN (four year digits and six serial digits).');input.reportValidity();}
+  return false;
+ }
+ if(input)input.setCustomValidity('');
+ state.receipt.current=value.toUpperCase();state.receipt.printed=false;receiptNoDraft=state.receipt.current;save();return true;
 }
 function applyPaidKindDefaults(){
  if(!isPaidKind())return;
@@ -2880,6 +2890,7 @@ function openStoredPdf(file, ev){
  return false;
 }
 function storageTab(){
+ if(editing&&!commitReceiptNo())return;
  const curNo=(state.receipt&&state.receipt.current)||'';
  const mode=storageMode();
  openDlg('Storage 存檔',()=>{
@@ -3106,6 +3117,7 @@ function storageTab(){
  });
 }
 function savePdf(){
+ if(editing&&!commitReceiptNo())return;
  if(typeof html2pdf==='undefined'){alert('PDF tool did not load.');return;}
  makeReceiptPdfBlob().then(r=>{
   const a=document.createElement('a');
@@ -3157,19 +3169,23 @@ function buildBar(){
    newReceiptBtn(),payInFullBtn(),
    h('button',{onclick:()=>{if(confirm('Clear everything typed into the form?'))renderSheet(true);}},'Clear form'),
    h('button',{onclick:toggleEdit},'✎ Edit'),
-   h('button',{onclick:()=>window.print()},'Print'),h('button',{class:'pri',onclick:savePdf,title:'Save a clean PDF with no browser date, title or file path'},'⬇ Save PDF'),
+   h('button',{onclick:()=>{if(!editing||commitReceiptNo())window.print();}},'Print'),h('button',{class:'pri',onclick:savePdf,title:'Save a clean PDF with no browser date, title or file path'},'⬇ Save PDF'),
    h('button',{onclick:storageTab,title:'Drop and browse PDFs by receipt number'},'Storage'),
    h('button',{title:'Settings, receipt numbers, glossary, backup',onclick:menuDialog},'⋯'));
  }else{
   bar.append(h('span',{class:'ttl'},'Editing'),h('span',{class:'ver'},VERSION),viewSeg(),h('span',{class:'st',id:'st'}),h('span',{class:'sp'}),
-   h('button',{onclick:()=>window.print()},'Print'),h('button',{onclick:savePdf},'⬇ Save PDF'),
+   h('button',{onclick:()=>{if(!editing||commitReceiptNo())window.print();}},'Print'),h('button',{onclick:savePdf},'⬇ Save PDF'),
    h('button',{onclick:downloadHtml},'Download HTML'),
    h('button',{title:'Settings, receipt numbers, glossary, backup',onclick:menuDialog},'⋯'),
    h('button',{class:'pri',onclick:toggleEdit},'✓ Done'));
   updStatus();
  }
 }
-function toggleEdit(){editing=!editing;cur=null;buildBar();renderSheet();window.scrollTo({top:0});}
+function toggleEdit(){
+ if(editing){if(!commitReceiptNo())return;editing=false;}
+ else{receiptNoDraft=(state.receipt&&state.receipt.current)||'';editing=true;}
+ cur=null;buildBar();renderSheet();window.scrollTo({top:0});
+}
 
 /* ---------- files ---------- */
 function dl(name,type,text){const a=h('a',{href:URL.createObjectURL(new Blob([text],{type})),download:name});document.body.append(a);a.click();a.remove();}
@@ -3436,6 +3452,7 @@ function finalizeEdit(el){
 const app=$('#app');
 app.addEventListener('input',e=>{
  const el=e.target;if(!el||!el.matches)return;
+ if(editing&&el.classList.contains('rno')){receiptNoDraft=el.value;el.setCustomValidity('');return;}
  if(editing&&el.matches('[contenteditable][data-p]')){
   const b=state.blocks.find(x=>x.id===el.dataset.b)||null;
   setP(b,el.dataset.p,el.textContent.replace(/\u00a0/g,' '));
