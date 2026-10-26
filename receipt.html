@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.45 · 26.10.25';
+const VERSION='v0.46 · 26.10.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -2219,15 +2219,24 @@ function localStorePut(entry){
  writeLocalStore(j);
  return entry;
 }
+function scrubJunkLocalFolders(){
+ const j=readLocalStore();
+ const junkNos=new Set();
+ (j.files||[]).forEach(f=>{
+  if(isJunkReceiptFolder(f&&f.receiptNo))junkNos.add(String(f.receiptNo));
+ });
+ junkNos.forEach(no=>{try{localStoreDelFolder(no);}catch(e){}});
+}
 function localFolders(){
  scrubLocalStoreDuplicates();
+ scrubJunkLocalFolders();
  const map=new Map();
  readLocalStore().files.forEach(f=>{
   const no=f.receiptNo||'?';
+  if(isJunkReceiptFolder(no))return;
   const key=String(no).toLowerCase();
   const row=map.get(key)||{receiptNo:no,count:0,latest:0,local:true};
   row.count++;row.latest=Math.max(row.latest,f.uploadedAt||0);
-  /* prefer original casing that looks like ARK- */
   if(/^ARK-/i.test(no)&&!/^ARK-/i.test(row.receiptNo))row.receiptNo=no;
   map.set(key,row);
  });
@@ -2330,14 +2339,29 @@ function storeCurrentReceiptToStorage(forceView){
   return storeReceiptPdf(r.blob,{filename:r.filename,kind:r.kind,receiptNo:r.receiptNo,view:r.view});
  });
 }
+function looksLikeReceiptNo(s){
+ return /^ARK-\d{4}-\d+/i.test(String(s||'').trim());
+}
+function isJunkReceiptFolder(no){
+ const s=String(no||'').trim();
+ if(!s||s==='?'||s==='receipt')return true;
+ if(looksLikeReceiptNo(s))return false;
+ if(/^TEMP\b/i.test(s))return true;
+ if(/Artwork Purchase Receipt/i.test(s))return true;
+ if(s.length>40)return true;
+ return false;
+}
 function parseReceiptMetaFromFilename(name){
  const base=String(name||'').replace(/\.pdf$/i,'');
- let view='full', kind='regular', no=base;
- if(/-paid-in-full$/i.test(no)){kind='paid-in-full';no=no.replace(/-paid-in-full$/i,'');}
- if(/-one-page$/i.test(no)){view='one-page';no=no.replace(/-one-page$/i,'');}
- else if(/-full$/i.test(no)){view='full';no=no.replace(/-full$/i,'');}
- no=no.replace(/-+$/,'')||'receipt';
- return {receiptNo:no,view,kind};
+ let view='full', kind='regular';
+ if(/paid-in-full/i.test(base))kind='paid-in-full';
+ if(/one-page/i.test(base)||/\bsmall\b/i.test(base))view='one-page';
+ const ark=base.match(/ARK-\d{4}-\d+/i);
+ if(ark)return {receiptNo:ark[0],view,kind};
+ let m=base.match(/^(?:Paid-in-full(?:-one-page)?|One-page-receipt|Full-receipt)-(.+)$/i);
+ let no=m?String(m[1]).replace(/-+$/,''):'';
+ if(no&&looksLikeReceiptNo(no))return {receiptNo:no,view,kind};
+ return {receiptNo:'',view,kind};
 }
 function findIndexRowByReceiptNo(receiptNo){
  try{
@@ -2612,7 +2636,13 @@ function siblingButtonsFor(receiptNo, sourceId){
 }
 function ingestPdfFileToStorage(file, fallbackNo){
  const meta=parseReceiptMetaFromFilename(file.name);
- const receiptNo=meta.receiptNo&&meta.receiptNo!=='receipt'?meta.receiptNo:(fallbackNo||(state.receipt&&state.receipt.current)||'receipt');
+ let receiptNo=meta.receiptNo&&meta.receiptNo!=='receipt'?meta.receiptNo:'';
+ if(!looksLikeReceiptNo(receiptNo)){
+  receiptNo=fallbackNo||(state.receipt&&state.receipt.current)||'';
+ }
+ if(!looksLikeReceiptNo(receiptNo)){
+  return Promise.reject(new Error('Drop needs an ARK- receipt number (open that receipt first)'));
+ }
  return file.arrayBuffer().then(buf=>{
   const blob=new Blob([buf],{type:'application/pdf'});
   return storeReceiptPdf(blob,{receiptNo,kind:meta.kind,view:meta.view,filename:file.name});
