@@ -1987,7 +1987,7 @@ function payInFullBtn(){
   title:paid?'Click again to revert to a regular receipt':'Stamp Paid in full on this receipt',
   'aria-pressed':paid?'true':'false',
   style:'background:#a53a2a;border-color:#a53a2a;color:#fff;font-weight:700'
- },'Pay in full · split');
+ },'Pay in full');
 }
 let skipPrinted=false;
 window.addEventListener('beforeprint',()=>{if(editing){editing=false;skipPrinted=true;buildBar();renderSheet();}});
@@ -2934,8 +2934,8 @@ function storageTab(){
      const splitBtn=document.createElement('button');
      splitBtn.type='button';
      splitBtn.className='stor-pay-split';
-     splitBtn.title='Split a Paid-in-full stamped copy with the same serial and details';
-     splitBtn.textContent='Pay in full - split';
+     splitBtn.title='Change this PDF to the Paid-in-full version (same Full / One-page layout)';
+     splitBtn.textContent='Change to paid';
      splitBtn.setAttribute('style','margin-left:auto;background:#a53a2a;border:1px solid #a53a2a;color:#fff;font:600 11px system-ui;padding:5px 10px;border-radius:6px;cursor:pointer;white-space:nowrap');
      splitBtn.addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();
@@ -2950,7 +2950,7 @@ function storageTab(){
        fromStorage:true
       })).finally(()=>{
        splitBtn.disabled=false;
-       splitBtn.textContent='Pay in full - split';
+       splitBtn.textContent='Change to paid';
       });
      });
      row.append(splitBtn);
