@@ -16,8 +16,8 @@ Hosted **Artwork Purchase Receipt** (Versy / paperworks) for Ark’s Coffee Shop
 - **Default merchant signature** on every kind (⋯ → Default signature). Stored in `localStorage` key `versy-merchant-sig`
 - **Save PDF** via html2pdf from jsDelivr CDN
 - **Storage** — dropped PDFs are classified by page count as regular One-page or Full receipts under the open ARK serial; click to expand files
-- **Mode toggle** — one sold-red bar button flips **New receipt** ↔ **Pay in full · split** (separate New receipt / ＋ One-page bar buttons removed)
-- **Pay in full · split** — from a Storage row, auto-adds a stamped Paid-in-full PDF under the same number
+- **Mode toggle** — one sold-red bar button flips **New receipt** ↔ **Pay in full** (separate New receipt / ＋ One-page bar buttons removed)
+- **Change to paid** — from a Storage row, saves a Paid-in-full PDF under the same number and in the same layout
 - **Cloud archive** on **Cloudflare R2** (Worker API). IndexedDB stays as offline fallback when cloud fails
 - **Hold 3s to delete** — sold-red blink on a Storage file line (or number line for the whole folder); releases early cancel
 
