@@ -1500,7 +1500,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.52 · 26.10.26';
+const VERSION='v0.53 · 26.10.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -2681,7 +2681,7 @@ function siblingButtonsFor(receiptNo, sourceId){
  );
  return box;
 }
-function pdfPageCount(data){
+function pdfInspect(data){
  const src='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.2.67/build/pdf.min.mjs';
  const worker='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.2.67/build/pdf.worker.min.mjs';
  window.__VERSY_PDFJS_READY=window.__VERSY_PDFJS_READY||import(src).then(function(pdfjs){
@@ -2692,17 +2692,43 @@ function pdfPageCount(data){
   return pdfjs.getDocument({data:new Uint8Array(data)}).promise;
  }).then(function(doc){
   const count=doc.numPages;
-  return doc.destroy().then(function(){return count;});
+  return doc.getMetadata().catch(function(){return null;}).then(function(md){
+   const info=(md&&md.info)||{};
+   return doc.destroy().then(function(){return {count:count,title:String(info.Title||''),keywords:String(info.Keywords||'')};});
+  });
  });
 }
-function ingestPdfFileToStorage(file, fallbackNo){
- const receiptNo=normalizeReceiptNo(fallbackNo)||normalizeReceiptNo(state.receipt&&state.receipt.current);
- if(!receiptNo){
-  return Promise.reject(new Error('Drop needs an ARK- receipt number (open that receipt first)'));
+function pdfPageCount(data){return pdfInspect(data).then(function(r){return r.count;});}
+function serialFromKeywords(kw){
+ const m=String(kw||'').match(/versy-state-v1:\s*(\S[\s\S]*)/);
+ if(!m)return '';
+ const raw=m[1].trim();
+ const tries=[raw];
+ try{tries.push(decodeURIComponent(raw));}catch(e){}
+ try{tries.push(decodeURIComponent(escape(atob(raw.replace(/-/g,'+').replace(/_/g,'/')))));}catch(e){}
+ try{tries.push(atob(raw.replace(/-/g,'+').replace(/_/g,'/')));}catch(e){}
+ for(const t of tries){
+  try{
+   const o=JSON.parse(t);
+   const no=normalizeReceiptNo(o&&o.receipt&&o.receipt.current);
+   if(no)return no;
+  }catch(e){}
  }
+ for(const t of tries){
+  const cm=t.match(/"current"\s*:\s*"(ARK-\d{4}-\d+)"/i);
+  if(cm)return cm[1].toUpperCase();
+ }
+ return '';
+}
+function ingestPdfFileToStorage(file, fallbackNo){
+ const openNo=normalizeReceiptNo(fallbackNo)||normalizeReceiptNo(state.receipt&&state.receipt.current);
  return file.arrayBuffer().then(buf=>{
-  return pdfPageCount(buf).then(function(count){
-   const view=count===1?'one-page':'full';
+  return pdfInspect(buf).then(function(info){
+   const receiptNo=openNo||serialFromKeywords(info.keywords)||normalizeReceiptNo(info.title)||normalizeReceiptNo(file.name);
+   if(!receiptNo){
+    throw new Error('No ARK-YYYY-N serial found in this PDF (Keywords, Title or filename). Open that receipt first, then drop');
+   }
+   const view=info.count===1?'one-page':'full';
    const blob=new Blob([buf],{type:'application/pdf'});
    return storeReceiptPdf(blob,{receiptNo,kind:'regular',view,source:'drop'});
   });
