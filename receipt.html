@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.52 · 26.10.26';
+const VERSION='v0.53 · 26.10.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -2517,6 +2517,37 @@ function preparePaidInFullClone(st, stash){
  copy.formStash=fs;
  return copy;
 }
+/** Decode versy-state-v1: Keywords from a stored PDF (local IndexedDB or cloud URL). */
+function decodeVersyStateFromPdfBytes(buf){
+ try{
+  const txt=new TextDecoder('latin1').decode(new Uint8Array(buf)).replace(/\\\r?\n/g,'');
+  const m=/versy-state-v1:([A-Za-z0-9+\/=_%\-]+)/.exec(txt);
+  if(!m)return null;
+  let raw=m[1],obj=null;
+  try{
+   const b=raw.replace(/-/g,'+').replace(/_/g,'/');
+   const bin=atob(b+'==='.slice((b.length+3)%4));
+   obj=JSON.parse(new TextDecoder('utf-8').decode(Uint8Array.from(bin,c=>c.charCodeAt(0))));
+  }catch(e){
+   try{obj=JSON.parse(decodeURIComponent(raw));}catch(e2){obj=null;}
+  }
+  if(!obj)return null;
+  const st=(obj.state&&Array.isArray(obj.state.blocks))?obj.state:obj;
+  if(!st||!Array.isArray(st.blocks))return null;
+  return {state:st,stash:Object.assign({},st.formStash||{},obj.formStash||{})};
+ }catch(e){return null;}
+}
+function stateFromStoredPdf(file){
+ if(!file)return Promise.resolve(null);
+ const src=file.url;
+ const key=file.pathname||(src&&String(src).indexOf('idb:')===0?String(src).slice(4):'');
+ const viaNet=function(){
+  if(!src||/^idb:/.test(src))return Promise.resolve(null);
+  return fetch(src).then(r=>r.ok?r.arrayBuffer():null).catch(()=>null);
+ };
+ const local=key?idbGetPdf(key).then(b=>b?b.arrayBuffer():null).catch(()=>null):Promise.resolve(null);
+ return local.then(buf=>buf||viaNet()).then(buf=>buf?decodeVersyStateFromPdfBytes(buf):null).catch(()=>null);
+}
 /** Split current receipt into a Paid-in-full sibling (same serial + details + stamp). */
 function splitPayInFullReceipt(opts){
  opts=opts||{};
@@ -2553,14 +2584,12 @@ function splitPayInFullReceipt(opts){
   }
  }
  if(st&&!stash) stash=Object.assign({}, (st.formStash||{}), formStash||{});
- /* Storage PDF exists but no saved state: use open receipt as template, else fresh default */
- if(!st&&serial&&fromStorage){
-  try{
-   try{snapForm();}catch(e){}
-   if(state&&Array.isArray(state.blocks)){st=clone(state);stash=Object.assign({}, formStash);}
-  }catch(e){}
-  if(!st){try{st=clone(seed);stash={};}catch(e){}}
-  sourceId=null;
+ /* Storage PDF with no saved state: read versy-state-v1 Keywords from the stored PDF; never borrow the open receipt */
+ if(!st&&serial&&fromStorage&&!opts.decoded){
+  return stateFromStoredPdf(opts.file).then(function(dec){
+   if(!dec){pdfToast('No saved form data for '+serial+' — open the original receipt and use Pay in full there',false);return null;}
+   return splitPayInFullReceipt(Object.assign({},opts,{sourceState:dec.state,formStash:dec.stash,sourceId:null,decoded:true}));
+  });
  }
  if(!st&&serial){
   alert('Open the receipt first so Pay in full can stamp your details.');
@@ -2929,8 +2958,8 @@ function storageTab(){
      const splitBtn=document.createElement('button');
      splitBtn.type='button';
      splitBtn.className='stor-pay-split';
-     splitBtn.title='Split a Paid-in-full stamped copy with the same serial and details';
-     splitBtn.textContent='Pay in full - split';
+     splitBtn.title='Create a Paid-in-full stamped copy with the same serial and details';
+     splitBtn.textContent='Create Paid-in-full PDF';
      splitBtn.setAttribute('style','margin-left:auto;background:#a53a2a;border:1px solid #a53a2a;color:#fff;font:600 11px system-ui;padding:5px 10px;border-radius:6px;cursor:pointer;white-space:nowrap');
      splitBtn.addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();
@@ -2942,10 +2971,11 @@ function storageTab(){
        sourceId:rowMeta&&rowMeta.id,
        view:(file.view==='one-page'||file.view==='small'||(!file.view&&/^(One-page-receipt|Paid-in-full-one-page)/i.test(String(file.filename||file.name||''))))?'one-page':'full',
        fromKind:file.kind,
+       file:file,
        fromStorage:true
       })).finally(()=>{
        splitBtn.disabled=false;
-       splitBtn.textContent='Pay in full - split';
+       splitBtn.textContent='Create Paid-in-full PDF';
       });
      });
      row.append(splitBtn);
