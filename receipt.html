@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.49 · 26.10.26';
+const VERSION='v0.50 · 26.10.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -2551,10 +2551,14 @@ function splitPayInFullReceipt(opts){
   }
  }
  if(st&&!stash) stash=Object.assign({}, (st.formStash||{}), formStash||{});
- /* Last resort only — warn instead of silent blank receipt */
+ /* Storage PDF exists but no saved state: use open receipt as template, else fresh default */
  if(!st&&serial&&fromStorage){
-  pdfToast('Open that receipt first, then Pay in full — no saved details for '+serial,false);
-  return Promise.resolve(null);
+  try{
+   try{snapForm();}catch(e){}
+   if(state&&Array.isArray(state.blocks)){st=clone(state);stash=Object.assign({}, formStash);}
+  }catch(e){}
+  if(!st){try{st=clone(seed);stash={};}catch(e){}}
+  sourceId=null;
  }
  if(!st&&serial){
   alert('Open the receipt first so Pay in full can stamp your details.');
