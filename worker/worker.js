@@ -55,6 +55,23 @@ function safeNo(no) {
   );
 }
 
+/** Canonical receipt serial (ARK-YYYY-N) from any string, or '' for TEMP/descriptive names. */
+function serialOf(no) {
+  const m = String(no || '').match(/ARK-\d{4}-\d+/i);
+  return m ? m[0].toUpperCase() : '';
+}
+
+/** R2 folder variants for a serial (keys are lowercase; legacy uppercase tolerated). */
+function folderPrefixes(serial) {
+  return [...new Set([`receipts/${serial.toLowerCase()}/`, `receipts/${serial}/`])];
+}
+
+async function listSerial(bucket, serial) {
+  const out = [];
+  for (const p of folderPrefixes(serial)) out.push(...(await listPrefix(bucket, p)));
+  return out;
+}
+
 function normalizeView(view) {
   return view === 'one-page' || view === 'small' ? 'one-page' : 'full';
 }
@@ -104,7 +121,7 @@ function parseKey(key) {
     view = 'full';
     kind = base.includes('paid-in-full') ? 'paid-in-full' : 'regular';
   }
-  return { receiptNo, view, kind, filename: friendlyName(receiptNo || 'receipt', view, kind), pathname: key };
+  return { receiptNo, view, kind, filename: friendlyName(serialOf(receiptNo) || receiptNo || 'receipt', view, kind), pathname: key };
 }
 
 function b64ToUint8(b64) {
@@ -149,7 +166,9 @@ async function handleUpload(request, env) {
   } catch {
     return json(request, env, 400, { error: 'Invalid JSON' });
   }
-  const receiptNo = safeNo(body.receiptNo);
+  const serial = serialOf(body.receiptNo) || serialOf(body.filename);
+  if (!serial) return json(request, env, 400, { error: 'receiptNo must be an ARK-YYYY-N serial' });
+  const receiptNo = safeNo(serial).toLowerCase();
   const kind = normalizeKind(body.kind);
   const view = normalizeView(body.view);
   const pdfBase64 = body.pdfBase64;
@@ -165,12 +184,11 @@ async function handleUpload(request, env) {
   if (bytes.length < 20) return json(request, env, 400, { error: 'empty pdf' });
   if (bytes.length > 8 * 1024 * 1024) return json(request, env, 413, { error: 'pdf too large' });
 
-  const filename = friendlyName(receiptNo, view, kind);
+  const filename = friendlyName(serial, view, kind);
   const key = objectKey(receiptNo, view, kind);
 
   // Remove other keys for same format (legacy names) under this receipt folder
-  const prefix = `receipts/${receiptNo}/`;
-  const existing = await listPrefix(env.RECEIPTS, prefix);
+  const existing = await listSerial(env.RECEIPTS, serial);
   for (const o of existing) {
     const meta = parseKey(o.key);
     if (meta.view === view && meta.kind === kind && o.key !== key) {
@@ -182,7 +200,7 @@ async function handleUpload(request, env) {
 
   await env.RECEIPTS.put(key, bytes, {
     httpMetadata: { contentType: 'application/pdf' },
-    customMetadata: { receiptNo, kind, view, filename },
+    customMetadata: { receiptNo: serial, kind, view, filename },
   });
 
   return json(request, env, 200, {
@@ -202,12 +220,12 @@ async function handleUpload(request, env) {
 async function handleList(request, env) {
   if (!env.RECEIPTS) return json(request, env, 503, { error: 'R2 binding RECEIPTS missing' });
   const u = new URL(request.url);
-  const no = safeNo(u.searchParams.get('no') || '');
   const hasNo = !!(u.searchParams.get('no') || '').trim();
+  const no = serialOf(u.searchParams.get('no') || '');
 
   if (hasNo) {
-    const prefix = `receipts/${no}/`;
-    const objects = await listPrefix(env.RECEIPTS, prefix);
+    if (!no) return json(request, env, 200, { ok: true, receiptNo: '', files: [], storage: 'r2' });
+    const objects = await listSerial(env.RECEIPTS, no);
     const files = dedupeByFormat(
       objects.map((o) => {
         const meta = parseKey(o.key);
@@ -219,7 +237,7 @@ async function handleList(request, env) {
           size: o.size,
           view: meta.view,
           kind: meta.kind,
-          receiptNo: meta.receiptNo || no,
+          receiptNo: no,
         };
       })
     );
@@ -231,12 +249,13 @@ async function handleList(request, env) {
   const map = new Map();
   for (const o of objects) {
     const meta = parseKey(o.key);
-    if (!meta.receiptNo) continue;
-    const row = map.get(meta.receiptNo) || { receiptNo: meta.receiptNo, count: 0, latest: null };
+    const serial = serialOf(meta.receiptNo);
+    if (!serial) continue;
+    const row = map.get(serial) || { receiptNo: serial, count: 0, latest: null };
     row.count += 1;
     const ts = o.uploaded ? new Date(o.uploaded).getTime() : 0;
     if (!row.latest || ts > row.latest) row.latest = ts;
-    map.set(meta.receiptNo, row);
+    map.set(serial, row);
   }
   const folders = [...map.values()].sort((a, b) => (b.latest || 0) - (a.latest || 0));
   return json(request, env, 200, { ok: true, folders, storage: 'r2' });
@@ -293,12 +312,11 @@ async function handleDelete(request, env) {
   }
 
   if (hasNo) {
-    const no = safeNo(noRaw);
-    const prefix = `receipts/${no}/`;
-    if (prefix.includes('..')) {
+    const no = serialOf(noRaw);
+    if (!no) {
       return json(request, env, 400, { error: 'invalid no' });
     }
-    const objects = await listPrefix(env.RECEIPTS, prefix);
+    const objects = await listSerial(env.RECEIPTS, no);
     const deleted = [];
     for (const o of objects) {
       if (!o.key.startsWith('receipts/') || o.key.includes('..')) continue;
