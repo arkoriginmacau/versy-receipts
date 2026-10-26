@@ -152,7 +152,7 @@ body:not(.editing) .blk.struck::after{content:"";position:absolute;left:-4px;rig
  body{background:#fff}
  .bar,.sh-head,.sh-foot,dialog{overflow:auto;display:none!important}
  .sheet{box-shadow:none;margin:0;padding:0;width:auto;min-height:0}
- .blk.pb{break-before:page}.blk.pb:first-child{break-before:auto}
+ .kg{break-inside:avoid}.blk.pb{break-before:page}.blocks>.blk.pb:first-child,.blocks>.kg:first-child>.blk.pb:first-child{break-before:auto}
  .blk.hid{display:none}
  .addtr{display:none}
  button.today{display:none}
@@ -171,7 +171,8 @@ body:not(.editing) .blk.struck::after{content:"";position:absolute;left:-4px;rig
 .editing .blk:hover{outline-color:#9bb0d6}
 .editing .blk.sel{outline:2px solid var(--accent)}
 .editing .blk.hid{opacity:.35}
-.editing .blk.pb::before{content:"↧ new page";position:absolute;top:-13px;right:0;font-size:9px;color:var(--accent)}
+.editing .blk.pb::before{content:"↧ new page";position:absolute;top:-13px;right:0;font-size:9px;color:#2878c7}
+.btb button.pbt{color:#2878c7;border-color:#2878c7}.btb button.pbt.on{background:#2878c7;color:#fff}
 .editing .blk[data-strike]::after{content:"✕ red strike-through when its box is ticked";position:absolute;top:-13px;left:0;font-size:9px;color:#d4001a}
 .editing .sheet input,.editing .sheet textarea,.editing button.today{pointer-events:none}
 .editing [contenteditable]{cursor:text;border-radius:2px;box-shadow:inset 0 -1px 0 rgba(155,35,53,.28);outline:none}
@@ -1706,7 +1707,9 @@ const R={
  signatures:b=>{const ls=b.lines||[];return `<div class="sg">${ls.map((l,i)=>{const mer=isMerchantSigLine(l);return `<div>${mer?merchantSigHtml():'<div class="ln"></div>'}<div class="lb">${bi2(b,`lines.${i}.en`,`lines.${i}.zh`)}${editing?` <span class="ec">${ctl(b,'lines',i,ls.length)}</span>`:''}</div></div><div data-dt><div class="ln"><input type="text" class="dt" data-fk="${b.id}:sg${i}" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="yyyy-mm-dd" aria-label="Date"></div><div class="lb dl"><span>${bi2(b,'dateEn','dateZh')}</span><button type="button" class="today">Today</button></div></div>`;}).join('')}</div>${editing?addBtn(b,'lines','+ Add signature line'):''}`;},
  spacer:b=>editing?`<div class="spc" style="height:${+b.h||20}px"><span>blank space · ${+b.h||0}px</span><button data-act="sp" data-b="${b.id}" data-d="-6">−</button><button data-act="sp" data-b="${b.id}" data-d="6">+</button></div>`:`<div style="height:${+b.h||20}px"></div>`
 };
-const btb=(b,i,n)=>`<div class="btb"><button data-act="b-up" data-b="${b.id}" title="Move block up"${i===0?' disabled':''}>↑</button><button data-act="b-down" data-b="${b.id}" title="Move block down"${i===n-1?' disabled':''}>↓</button><button data-act="b-ins" data-b="${b.id}" title="Insert a new block below">＋</button><button data-act="b-dup" data-b="${b.id}" title="Duplicate block">⧉</button><button data-act="b-set" data-b="${b.id}" title="Block settings (new page, hide, red strike-through)">⚙</button><button class="dng" data-act="b-del" data-b="${b.id}" title="Delete block">✕</button></div>`;
+const btb=(b,i,n)=>`<div class="btb"><button data-act="b-up" data-b="${b.id}" title="Move block up"${i===0?' disabled':''}>↑</button><button data-act="b-down" data-b="${b.id}" title="Move block down"${i===n-1?' disabled':''}>↓</button><button data-act="b-ins" data-b="${b.id}" title="Insert a new block below">＋</button><button data-act="b-dup" data-b="${b.id}" title="Duplicate block">⧉</button>${pbBtn(b)}<button data-act="b-set" data-b="${b.id}" title="Block settings (new page, hide, red strike-through)">⚙</button><button class="dng" data-act="b-del" data-b="${b.id}" title="Delete block">✕</button></div>`;
+const blocksHtml=()=>{const L=state.blocks.filter(b=>editing||!b.hidden),o=[];for(let k=0;k<L.length;k++){const b=L[k],nx=L[k+1];if(nx&&(b.type==='heading'||b.type==='subheading')&&!nx.pageBreak&&!b.hidden===!nx.hidden&&nx.type!=='heading'){o.push('<div class="kg">'+blockHtml(b)+blockHtml(nx)+'</div>');k++;}else o.push(blockHtml(b));}return o.join('');};
+const pbBtn=b=>`<button class="pbt${b.pageBreak?' on':''}" data-act="b-pb" data-b="${b.id}" title="${b.pageBreak?'Starts a new page when printing (click to clear)':'Start this block on a new page when printing'}" aria-pressed="${b.pageBreak?'true':'false'}">⤓</button>`;
 const blockHtml=b=>{const i=state.blocks.indexOf(b),n=state.blocks.length;return `<section class="blk${b.pageBreak?' pb':''}${b.hidden?' hid':''}${cur===b.id?' sel':''}" data-bid="${b.id}"${b.strikeWhen?` data-strike="${esc(b.strikeWhen)}"`:''}>${editing?btb(b,i,n):''}${(R[b.type]||(()=>''))(b)}</section>`;};
 
 const q=x=>'"'+String(x==null?'':x).replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/\n/g,' ')+'"';
@@ -1880,7 +1883,7 @@ function renderSheet(forceClear){
   return;
  }
  sh.className='sheet';
- $('#sheet').innerHTML=`<div class="sh-head"><b${A(null,'@s.headerLeft','Header (left)')}>${esc(s.headerLeft)}</b><span${A(null,'@s.headerRight','Header (right)')}>${esc(s.headerRight)}</span></div><div class="blocks">${state.blocks.filter(b=>editing||!b.hidden).map(blockHtml).join('')}</div>${editing?'<div class="endadd"><button class="addb" data-act="b-add-end">+ Add block</button></div>':''}<div class="sh-foot"><span${A(null,'@s.footerLeft','Footer')}>${esc(s.footerLeft)}</span></div>`;
+ $('#sheet').innerHTML=`<div class="sh-head"><b${A(null,'@s.headerLeft','Header (left)')}>${esc(s.headerLeft)}</b><span${A(null,'@s.headerRight','Header (right)')}>${esc(s.headerRight)}</span></div><div class="blocks">${blocksHtml()}</div>${editing?'<div class="endadd"><button class="addb" data-act="b-add-end">+ Add block</button></div>':''}<div class="sh-foot"><span${A(null,'@s.footerLeft','Footer')}>${esc(s.footerLeft)}</span></div>`;
  restoreForm();applyStrikes();
  if(fp){const n=document.querySelector(`[contenteditable][data-b="${fp[0]}"][data-p="${fp[1]}"]`);if(n){n.focus();placeEnd(n);}}
 }
@@ -2347,7 +2350,7 @@ function archivePdf(blob,filename,kind,receiptNo,view){
 function pdfWorkerOpts(paper,filename){
  return {margin:0,filename:filename,image:{type:'jpeg',quality:0.98},
   html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',ignoreElements:el=>el.id==='abPick'||(el.classList&&(el.classList.contains('sh-head')||el.classList.contains('sh-foot')||el.classList.contains('sm-sync')||el.classList.contains('msig-set')||el.classList.contains('no-print')))},
-  jsPDF:{unit:'mm',format:paper,orientation:'portrait'},pagebreak:{mode:['css','legacy'],before:'.pb',avoid:['.fl','.fv','.cl>div','.s','h2','h3','.sg']}};
+  jsPDF:{unit:'mm',format:paper,orientation:'portrait'},pagebreak:{mode:['css','legacy'],before:'.pb',avoid:['.kg','.fl','.fv','.cl>div','.s','h2','h3','.sg']}};
 }
 function makeReceiptPdfBlob(forceView){
  if(typeof html2pdf==='undefined')return Promise.reject(new Error('PDF tool did not load.'));
@@ -3361,6 +3364,7 @@ function act(t){
   case 'b-down':move(state.blocks,bi,1);break;
   case 'b-dup':{const c=clone(b);c.id=uid();(c.rows||[]).forEach(r=>{delete r.rid;(r.options||[]).forEach(o=>{if(o.id)o.id=uid();});});delete c.strikeWhen;state.blocks.splice(bi+1,0,c);cur=c.id;break;}
   case 'b-del':if(!confirm('Delete this block?'))return;state.blocks.splice(bi,1);cur=null;break;
+  case 'b-pb':if(b){if(b.pageBreak)delete b.pageBreak;else b.pageBreak=true;}break;
   case 'b-set':blockDialog(b);return;
   case 'b-ins':typeDialog(k=>insertBlock(bi,k));return;
   case 'b-add-end':typeDialog(k=>insertBlock(state.blocks.length-1,k));return;
