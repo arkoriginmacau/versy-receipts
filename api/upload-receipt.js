@@ -17,6 +17,11 @@ function formatPrefix(receiptNo, view, kind) {
   return `receipts/${receiptNo}/${view}-${kind}`;
 }
 
+function serialOf(no) {
+  const match = String(no || '').match(/ARK-\d{4}-\d+/i);
+  return match ? match[0].toUpperCase() : '';
+}
+
 module.exports = async function handler(req, res) {
   cors(res);
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -27,8 +32,11 @@ module.exports = async function handler(req, res) {
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-    const receiptNo = safeNo(body.receiptNo);
-    const kind = body.kind === 'paid-in-full' ? 'paid-in-full' : 'regular';
+    const receiptNo = body.source === 'drop'
+      ? serialOf(body.receiptNo)
+      : safeNo(body.receiptNo);
+    if (!receiptNo) return res.status(400).json({ error: 'receiptNo must be an ARK serial' });
+    const kind = body.source === 'drop' ? 'regular' : (body.kind === 'paid-in-full' ? 'paid-in-full' : 'regular');
     const view = body.view === 'one-page' ? 'one-page' : 'full';
     const pdfBase64 = body.pdfBase64;
     if (!pdfBase64) return res.status(400).json({ error: 'pdfBase64 required' });

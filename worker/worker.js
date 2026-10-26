@@ -91,7 +91,8 @@ function friendlyName(receiptNo, view, kind) {
 }
 
 function objectKey(receiptNo, view, kind) {
-  return `receipts/${receiptNo}/${friendlyName(receiptNo, view, kind)}`;
+  const serial = serialOf(receiptNo) || receiptNo;
+  return `receipts/${String(receiptNo).toLowerCase()}/${friendlyName(serial, view, kind)}`;
 }
 
 /** Parse friendly or legacy keys back to meta */
@@ -166,10 +167,10 @@ async function handleUpload(request, env) {
   } catch {
     return json(request, env, 400, { error: 'Invalid JSON' });
   }
-  const serial = serialOf(body.receiptNo) || serialOf(body.filename);
+  const serial = serialOf(body.receiptNo);
   if (!serial) return json(request, env, 400, { error: 'receiptNo must be an ARK-YYYY-N serial' });
   const receiptNo = safeNo(serial).toLowerCase();
-  const kind = normalizeKind(body.kind);
+  const kind = body.source === 'drop' ? 'regular' : normalizeKind(body.kind);
   const view = normalizeView(body.view);
   const pdfBase64 = body.pdfBase64;
   if (!pdfBase64) return json(request, env, 400, { error: 'pdfBase64 required' });

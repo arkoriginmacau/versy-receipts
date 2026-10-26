@@ -2300,7 +2300,7 @@ function storeReceiptPdf(blob, opts){
   pdfToast('Not stored — no ARK- receipt number',false);
   return Promise.resolve(null);
  }
- const kind=opts.kind==='paid-in-full'?'paid-in-full':'regular';
+ const kind=opts.source==='drop'?'regular':(opts.kind==='paid-in-full'?'paid-in-full':'regular');
  const view=opts.view==='one-page'?'one-page':'full';
  const pathname=stablePathname(receiptNo, view, kind);
  const filename=displayPdfName(receiptNo, view, kind);
@@ -2324,7 +2324,7 @@ function storeReceiptPdf(blob, opts){
  }
  pdfToast('Storing on Cloudflare…',null);
  return blobToBase64(pdfBlob).then(function(pdfBase64){
-  return fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({receiptNo:receiptNo,kind:kind,view:view,filename:filename,pdfBase64:pdfBase64})});
+  return fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({receiptNo:receiptNo,kind:kind,view:view,filename:filename,source:opts.source,pdfBase64:pdfBase64})});
  }).then(async function(r){
   let j=null;try{j=await r.json();}catch(e){}
   if(!r.ok)throw new Error((j&&j.error)||('HTTP '+r.status));
@@ -2400,18 +2400,6 @@ function isJunkReceiptFolder(no){
  if(/^TEMP\b/i.test(s))return true;
  if(/Artwork Purchase Receipt/i.test(s))return true;
  return true;
-}
-function parseReceiptMetaFromFilename(name){
- const base=String(name||'').replace(/\.pdf$/i,'');
- let view='full', kind='regular';
- if(/paid-in-full/i.test(base))kind='paid-in-full';
- if(/one-page/i.test(base)||/\bsmall\b/i.test(base))view='one-page';
- const ark=base.match(/ARK-\d{4}-\d+/i);
- if(ark)return {receiptNo:ark[0],view,kind};
- let m=base.match(/^(?:Paid-in-full(?:-one-page)?|One-page-receipt|Full-receipt)-(.+)$/i);
- let no=m?String(m[1]).replace(/-+$/,''):'';
- if(no&&looksLikeReceiptNo(no))return {receiptNo:no,view,kind};
- return {receiptNo:'',view,kind};
 }
 function findIndexRowByReceiptNo(receiptNo){
  try{
@@ -2684,15 +2672,31 @@ function siblingButtonsFor(receiptNo, sourceId){
  );
  return box;
 }
+function pdfPageCount(data){
+ const src='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.2.67/build/pdf.min.mjs';
+ const worker='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.2.67/build/pdf.worker.min.mjs';
+ window.__VERSY_PDFJS_READY=window.__VERSY_PDFJS_READY||import(src).then(function(pdfjs){
+  pdfjs.GlobalWorkerOptions.workerSrc=worker;
+  return pdfjs;
+ });
+ return window.__VERSY_PDFJS_READY.then(function(pdfjs){
+  return pdfjs.getDocument({data:new Uint8Array(data)}).promise;
+ }).then(function(doc){
+  const count=doc.numPages;
+  return doc.destroy().then(function(){return count;});
+ });
+}
 function ingestPdfFileToStorage(file, fallbackNo){
- const meta=parseReceiptMetaFromFilename(file.name);
- let receiptNo=normalizeReceiptNo(meta.receiptNo)||normalizeReceiptNo(fallbackNo)||normalizeReceiptNo(state.receipt&&state.receipt.current);
+ const receiptNo=normalizeReceiptNo(fallbackNo)||normalizeReceiptNo(state.receipt&&state.receipt.current);
  if(!receiptNo){
   return Promise.reject(new Error('Drop needs an ARK- receipt number (open that receipt first)'));
  }
  return file.arrayBuffer().then(buf=>{
-  const blob=new Blob([buf],{type:'application/pdf'});
-  return storeReceiptPdf(blob,{receiptNo,kind:meta.kind,view:meta.view,filename:displayPdfName(receiptNo,meta.view,meta.kind)});
+  return pdfPageCount(buf).then(function(count){
+   const view=count===1?'one-page':'full';
+   const blob=new Blob([buf],{type:'application/pdf'});
+   return storeReceiptPdf(blob,{receiptNo,kind:'regular',view,source:'drop'});
+  });
  });
 }
 function handleStorageDrop(dt, fallbackNo, onDone){
