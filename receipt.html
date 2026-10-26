@@ -152,7 +152,7 @@ body:not(.editing) .blk.struck::after{content:"";position:absolute;left:-4px;rig
  body{background:#fff}
  .bar,.sh-head,.sh-foot,dialog{overflow:auto;display:none!important}
  .sheet{box-shadow:none;margin:0;padding:0;width:auto;min-height:0}
- .kg{break-inside:avoid}.blk.pb{break-before:page}.blocks>.blk.pb:first-child,.blocks>.kg:first-child>.blk.pb:first-child{break-before:auto}
+ .kg{break-inside:avoid}.blk.pb{break-before:page;page-break-before:always}.blocks>.blk.pb:first-child,.blocks>.kg:first-child>.blk.pb:first-child{break-before:auto;page-break-before:auto}
  .pb-toggle{display:none!important}
  .blk.hid{display:none}
  .addtr{display:none}
@@ -172,7 +172,7 @@ body:not(.editing) .blk.struck::after{content:"";position:absolute;left:-4px;rig
 .editing .blk:hover{outline-color:#9bb0d6}
 .editing .blk.sel{outline:2px solid var(--accent)}
 .editing .blk.hid{opacity:.35}
-.editing .pb-toggle{display:flex;width:100%;height:14px;align-items:center;gap:8px;padding:0;border:0;background:transparent;color:#2878c7;font-size:9px;line-height:1}
+.editing .pb-toggle{display:flex!important;width:100%;height:14px;align-items:center;gap:8px;padding:0;border:0;background:transparent;color:#2878c7;font-size:9px;line-height:1}
 .editing .pb-toggle::before,.editing .pb-toggle::after{content:"";flex:1;border-top:1px dashed #b7cce0}
 .editing .pb-toggle.on::before,.editing .pb-toggle.on::after{border-top:2px solid #2878c7}
 .editing .pb-toggle:hover{background:transparent;color:#1f5f9e}
@@ -1505,7 +1505,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.55 · 26.10.26';
+const VERSION='v0.56 · 26.10.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1712,7 +1712,7 @@ const R={
  spacer:b=>editing?`<div class="spc" style="height:${+b.h||20}px"><span>blank space · ${+b.h||0}px</span><button data-act="sp" data-b="${b.id}" data-d="-6">−</button><button data-act="sp" data-b="${b.id}" data-d="6">+</button></div>`:`<div style="height:${+b.h||20}px"></div>`
 };
 const btb=(b,i,n)=>`<div class="btb"><button data-act="b-up" data-b="${b.id}" title="Move block up"${i===0?' disabled':''}>↑</button><button data-act="b-down" data-b="${b.id}" title="Move block down"${i===n-1?' disabled':''}>↓</button><button data-act="b-ins" data-b="${b.id}" title="Insert a new block below">＋</button><button data-act="b-dup" data-b="${b.id}" title="Duplicate block">⧉</button><button data-act="b-set" data-b="${b.id}" title="Block settings (hide, red strike-through)">⚙</button><button class="dng" data-act="b-del" data-b="${b.id}" title="Delete block">✕</button></div>`;
-const blocksHtml=()=>{const L=state.blocks.filter(b=>editing||!b.hidden),o=[];for(let k=0;k<L.length;k++){const b=L[k],nx=L[k+1];if(nx&&(b.type==='heading'||b.type==='subheading')&&!nx.pageBreak&&!b.hidden===!nx.hidden&&nx.type!=='heading'){o.push('<div class="kg">'+blockHtml(b)+blockHtml(nx)+'</div>');k++;}else o.push(blockHtml(b));}return o.join('');};
+const blocksHtml=()=>{const L=state.blocks.filter(b=>editing||!b.hidden),o=[];for(let k=0;k<L.length;k++){const b=L[k],nx=L[k+1];if(nx&&!b.pageBreak&&(b.type==='heading'||b.type==='subheading')&&!nx.pageBreak&&!b.hidden===!nx.hidden&&nx.type!=='heading'){o.push('<div class="kg">'+blockHtml(b)+blockHtml(nx)+'</div>');k++;}else o.push(blockHtml(b));}return o.join('');};
 const blockHtml=b=>{const i=state.blocks.indexOf(b),n=state.blocks.length;return `<section class="blk${b.pageBreak?' pb':''}${b.hidden?' hid':''}${cur===b.id?' sel':''}" data-bid="${b.id}"${b.strikeWhen?` data-strike="${esc(b.strikeWhen)}"`:''}>${editing&&i>0?`<button class="pb-toggle${b.pageBreak?' on':''}" data-act="page-break" data-b="${b.id}" aria-pressed="${!!b.pageBreak}" title="${b.pageBreak?'Remove page break before this block':'Start this block on a new page'}">${b.pageBreak?'Page break':'＋ Page break'}</button>`:''}${editing?btb(b,i,n):''}${(R[b.type]||(()=>''))(b)}</section>`;};
 
 const q=x=>'"'+String(x==null?'':x).replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/\n/g,' ')+'"';
