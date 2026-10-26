@@ -91,7 +91,8 @@ function friendlyName(receiptNo, view, kind) {
 }
 
 function objectKey(receiptNo, view, kind) {
-  return `receipts/${receiptNo}/${friendlyName(receiptNo, view, kind)}`;
+  const serial = serialOf(receiptNo) || receiptNo;
+  return `receipts/${String(receiptNo).toLowerCase()}/${friendlyName(serial, view, kind)}`;
 }
 
 /** Parse friendly or legacy keys back to meta */
