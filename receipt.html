@@ -1932,8 +1932,27 @@ function newReceipt(){
 }
 /** Stamp Paid in full on the receipt currently open (same view, no sibling jump). */
 function stampPayInFullOnCurrent(){
- if(isPaidKind()){alert('This receipt is already Paid in full.');return;}
  try{snapForm();}catch(e){}
+ if(isPaidKind()){
+  const pre=state.prePaid;
+  if(pre){
+   state.settings=Object.assign({},state.settings,{accent:pre.accent,headerRight:pre.headerRight});
+   state.blocks=clone(pre.blocks);
+   formStash=clone(pre.formStash);
+  }
+  delete state.prePaid;
+  state.kind='regular';
+  window.__VERSY_RECEIPT_KIND='regular';
+  try{
+   const q=new URLSearchParams(location.search);
+   q.delete('kind');
+   history.replaceState(null,'',location.pathname+'?'+q.toString()+location.hash);
+  }catch(e){}
+  try{save(true);}catch(e){}
+  buildBar();renderSheet();window.scrollTo({top:0});
+  return;
+ }
+ state.prePaid={accent:state.settings&&state.settings.accent,headerRight:state.settings&&state.settings.headerRight,blocks:clone(state.blocks||[]),formStash:clone(formStash)};
  state.kind='paid-in-full';
  window.__VERSY_RECEIPT_KIND='paid-in-full';
  /* Keep the layout you are on (full or one-page) */
@@ -1958,9 +1977,9 @@ function payInFullBtn(){
  const paid=isPaidKind();
  return h('button',{
   onclick:stampPayInFullOnCurrent,
-  disabled:paid||undefined,
-  title:paid?'Already Paid in full':'Stamp Paid in full on this receipt',
-  style:paid?'opacity:.55;cursor:default;background:#a53a2a;border-color:#a53a2a;color:#fff;font-weight:700':'background:#a53a2a;border-color:#a53a2a;color:#fff;font-weight:700'
+  title:paid?'Click again to revert to a regular receipt':'Stamp Paid in full on this receipt',
+  'aria-pressed':paid?'true':'false',
+  style:'background:#a53a2a;border-color:#a53a2a;color:#fff;font-weight:700'
  },'Pay in full · split');
 }
 let skipPrinted=false;
