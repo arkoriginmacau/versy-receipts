@@ -1499,7 +1499,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.47 · 26.10.26';
+const VERSION='v0.48 · 26.10.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -2210,6 +2210,7 @@ function scrubLocalStoreDuplicates(){
  return j;
 }
 function localStorePut(entry){
+ entry.receiptNo=normalizeReceiptNo(entry.receiptNo)||entry.receiptNo;
  const j=scrubLocalStoreDuplicates();
  const view=entry.view||'full', kind=entry.kind||'regular';
  entry.view=view;entry.kind=kind;
@@ -2222,7 +2223,27 @@ function localStorePut(entry){
  writeLocalStore(j);
  return entry;
 }
+function remapLocalSerials(){
+ const j=readLocalStore();
+ let changed=false;
+ j.files=(j.files||[]).map(f=>{
+  const no=String(f&&f.receiptNo||'');
+  const ark=normalizeReceiptNo(no);
+  if(!ark||no===ark)return f;
+  const view=f.view||'full', kind=f.kind||'regular', pathname=stablePathname(ark,view,kind);
+  const oldPath=f.pathname;
+  if(oldPath&&oldPath!==pathname){idbGetPdf(oldPath).then(b=>{if(b)return idbPutPdf(pathname,b).then(()=>idbDelPdf(oldPath));}).catch(function(){});}
+  changed=true;
+  return Object.assign({},f,{receiptNo:ark,pathname:pathname,filename:displayPdfName(ark,view,kind),url:'idb:'+pathname});
+ });
+ if(changed){
+  const seen=new Set();
+  j.files=j.files.filter(f=>{const k=formatKey(f.receiptNo,f.view,f.kind);if(seen.has(k))return false;seen.add(k);return true;});
+  writeLocalStore(j);
+ }
+}
 function scrubJunkLocalFolders(){
+ remapLocalSerials();
  const j=readLocalStore();
  const junkNos=new Set();
  (j.files||[]).forEach(f=>{
