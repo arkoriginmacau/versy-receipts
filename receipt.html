@@ -1507,7 +1507,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.63 · 27.10.26';
+const VERSION='v0.64 · 27.10.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1835,7 +1835,7 @@ function theme(){
 /* ---------- one-page receipt: reads the Artwork Purchase Receipt form, so both stay in sync ---------- */
 const ROLES={bizName:/^business name$/i,bizContact:/^contact$/i,bizWeb:/^website$/i,date:/^transaction date$/i,
  buyerName:/^name$/i,buyerEmail:/^email$/i,buyerContact:/^contact no\.?$/i,
- title:/^title of artwork$/i,serial:/^serial no\.?$/i,size:/^size/i,medium:/^medium$/i,desc:/^(subject |artwork )?description/i,price:/^price$/i,paid:/^(amount paid|deposit paid)/i};
+ title:/^title of artwork$/i,serial:/^serial no\.?$/i,size:/^size/i,medium:/^medium$/i,desc:/^(subject |artwork )?description/i,price:/^price$/i,paid:/^amount paid/i,deposit:/^deposit paid/i};
 function allRows(){const out=[];state.blocks.forEach(b=>{if(b.type==='fields')(b.rows||[]).forEach((row,i)=>out.push({b,i,row}));});return out;}
 function rowsFor(role){
  const sm=state.settings.small;sm.map=sm.map||{};
@@ -1888,9 +1888,11 @@ function smallHtml(){
  const no=state.receipt.current||'',date=firstVal('date')||todayISO();
  const name=firstVal('buyerName'),cLine=[firstVal('buyerContact'),firstVal('buyerEmail')].filter(Boolean).join('  ·  ');
  const desc=firstVal('desc'),title=firstVal('title'),serial=firstVal('serial'),size=firstVal('size'),med=tickedHtml('medium');
- const price=firstVal('price'),full=isFullPaid();
- let paid=firstVal('paid');if((full||isPaidKind())&&!paid)paid=price;
- let bal='';if(!full&&price&&paid&&!isNaN(numOf(price))&&!isNaN(numOf(paid))){const d=numOf(price)-numOf(paid);if(d>0)bal=money(d,price);}
+ const price=firstVal('price'),full=isFullPaid()||isPaidKind();
+ let paid=firstVal('paid')||firstVal('deposit')||'';
+ /* Paid in full must show the full price (Total), never a leftover deposit. */
+ if(full)paid=price||paid;
+ let bal='';if(!full&&price&&paid&&!isNaN(numOf(price))&&!isNaN(numOf(paid))){const d=numOf(price)-numOf(paid);if(d>0)bal=money(d,price);}else if(full)bal='';
  const parts=[];
  if(serial||editing)parts.push(`${sl('serial')} <b>${esc(serial)}</b>`);
  if(size||editing)parts.push(`${sl('size')} <b>${esc(size)}</b>`);
@@ -2030,10 +2032,9 @@ function applyPaidKindDefaults(){
     if(o.id==='paidfull'||/^paid in full$/i.test((o.en||'').trim()))
      formStash[b.id+':'+i+':'+j]={c:true,v:''};
    });
-   if(/^Amount Paid|已付金額$/i.test((r.en||'').trim())||r.en==='Amount Paid'){
+   if(/^Amount Paid|已付金額$/i.test((r.en||'').trim())||r.en==='Amount Paid'||(r.role==='paid')||(r.rid&&String(r.rid).toLowerCase()==='paid')||/^Deposit Paid/i.test((r.en||'').trim())){
     const price=(()=>{try{return firstVal('price');}catch(e){return '';}})();
-    const cur=(formStash[b.id+':'+i]&&formStash[b.id+':'+i].v)||'';
-    if(price&&!cur)formStash[b.id+':'+i]={c:false,v:price};
+    if(price)formStash[b.id+':'+i]={c:false,v:price};
    }
   });
  });
@@ -2761,13 +2762,8 @@ function preparePaidInFullClone(st, stash){
    if(r.kind==='checks')(r.options||[]).forEach((o,j)=>{
     if(o.id==='paidfull'||/^paid in full$/i.test((o.en||'').trim())) fs[b.id+':'+i+':'+j]={c:true,v:''};
    });
-   if(/^Amount Paid|已付金額$/i.test((r.en||'').trim())||r.en==='Amount Paid'){
-    const cur=fs[b.id+':'+i];
-    if(price&&(!cur||!cur.v)) fs[b.id+':'+i]={c:false,v:price};
-   }
-   if((r.role==='paid')||(r.rid&&String(r.rid).toLowerCase()==='paid')){
-    const cur=fs[b.id+':'+i];
-    if(price&&(!cur||!cur.v)) fs[b.id+':'+i]={c:false,v:price};
+   if(/^Amount Paid|已付金額$/i.test((r.en||'').trim())||r.en==='Amount Paid'||(r.role==='paid')||(r.rid&&String(r.rid).toLowerCase()==='paid')||/^Deposit Paid/i.test((r.en||'').trim())){
+    if(price) fs[b.id+':'+i]={c:false,v:price};
    }
   });
  });
