@@ -2367,9 +2367,14 @@ function storeReceiptPdf(blob, opts){
 function archivePdf(blob,filename,kind,receiptNo,view){
  return storeReceiptPdf(blob,{filename,kind,receiptNo,view});
 }
+/* browsers cap canvas height (~16k px): a long Full sheet at 2x gets its tail (QR, photos, Care text) cut off */
+function pdfScale(){
+ try{const sh=$('#sheet');const h=sh?Math.max(sh.scrollHeight,sh.offsetHeight):0;if(h>0)return Math.max(1,Math.min(2,Math.floor(15000/h*100)/100));}catch(e){}
+ return 2;
+}
 function pdfWorkerOpts(paper,filename){
  return {margin:0,filename:filename,image:{type:'jpeg',quality:0.98},
-  html2canvas:{scale:2,useCORS:true,scrollX:0,scrollY:0,windowWidth:document.documentElement.clientWidth,backgroundColor:'#ffffff',ignoreElements:el=>el.id==='abPick'||(el.classList&&(el.classList.contains('sh-head')||el.classList.contains('sh-foot')||el.classList.contains('sm-sync')||el.classList.contains('msig-set')||el.classList.contains('no-print')||el.classList.contains('today')||el.classList.contains('pb-toggle')||el.classList.contains('addtr')))},
+  html2canvas:{scale:pdfScale(),useCORS:true,scrollX:0,scrollY:0,windowWidth:document.documentElement.clientWidth,backgroundColor:'#ffffff',ignoreElements:el=>el.id==='abPick'||(el.classList&&(el.classList.contains('sh-head')||el.classList.contains('sh-foot')||el.classList.contains('sm-sync')||el.classList.contains('msig-set')||el.classList.contains('no-print')||el.classList.contains('today')||el.classList.contains('pb-toggle')||el.classList.contains('addtr')))},
   jsPDF:{unit:'mm',format:paper,orientation:'portrait'},pagebreak:{mode:['css','legacy'],before:'.pb',avoid:['.kg','.fl','.fv','.cl>div','.s','h2','h3','.sg']}};
 }
 function makeReceiptPdfBlob(forceView){
