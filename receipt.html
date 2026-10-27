@@ -1508,7 +1508,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.65 · 27.10.26';
+const VERSION='v0.66 · 27.10.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -2155,7 +2155,6 @@ function stampPayInFullOnCurrent(){
  }catch(e){}
  try{save(true);}catch(e){}
  skipSnapOnce=true;buildBar();renderSheet();window.scrollTo({top:0});
- storeCurrentReceiptPair();
 }
 function newReceiptBtn(){
  return h('button',{
@@ -2504,51 +2503,7 @@ function localFilesFor(receiptNo){
 function storageMode(){
  return uploadApiUrl()?'cloud':'local';
 }
-function storeReceiptPdf(blob, opts){
- opts=opts||{};
- const receiptNo=normalizeReceiptNo(opts.receiptNo)||normalizeReceiptNo(opts.filename)||normalizeReceiptNo(state.receipt&&state.receipt.current);
- if(!validReceiptNo(receiptNo)||(opts.receiptNo!=null&&!validReceiptNo(String(opts.receiptNo).trim()))){
-  pdfToast('Not stored — use ARK-YYYY-NNNNNN',false);
-  return Promise.resolve(null);
- }
- const kind=opts.source==='drop'?'regular':(opts.kind==='paid-in-full'?'paid-in-full':'regular');
- const view=opts.view==='one-page'?'one-page':'full';
- const pathname=stablePathname(receiptNo, view, kind);
- const filename=displayPdfName(receiptNo, view, kind);
- const api=uploadApiUrl();
- const pdfBlob=(blob&&blob.type==='application/pdf')?blob:new Blob([blob],{type:'application/pdf'});
- const finishLocal=function(){
-  return idbPutPdf(pathname, pdfBlob).then(function(){
-   localStorePut({receiptNo:receiptNo,kind:kind,view:view,filename:filename,pathname:pathname,url:'idb:'+pathname,uploadedAt:Date.now(),local:true,size:pdfBlob.size||0});
-   const verify=localFilesFor(receiptNo).some(function(f){return f.kind===kind&&(f.view||'full')===view;});
-   if(!verify)throw new Error('Metadata write failed');
-   return idbGetPdf(pathname).then(function(got){
-    if(!got)throw new Error('IndexedDB write failed');
-    pdfToast('Stored under '+receiptNo+' · '+filename+(api?'':' (local)'),true);
-    return {ok:true,local:true,pathname:pathname,receiptNo:receiptNo,kind:kind,view:view,filename:filename};
-   });
-  });
- };
- if(!api){
-  pdfToast('Saving in this browser…',null);
-  return finishLocal().catch(function(err){pdfToast(String(err&&err.message||err),false);return null;});
- }
- pdfToast('Storing on Cloudflare…',null);
- return blobToBase64(pdfBlob).then(function(pdfBase64){
-  return fetchRetry(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({receiptNo:receiptNo,kind:kind,view:view,filename:filename,source:opts.source,pdfBase64:pdfBase64})});
- }).then(async function(r){
-  let j=null;try{j=await r.json();}catch(e){}
-  if(!r.ok)throw new Error((j&&j.error)||('HTTP '+r.status));
-  /* also mirror metadata+blob locally so Storage list works offline */
-  try{await idbPutPdf(pathname, pdfBlob);localStorePut({receiptNo:receiptNo,kind:kind,view:view,filename:filename,pathname:pathname,url:(j&&j.url)||('idb:'+pathname),uploadedAt:Date.now(),local:false,size:pdfBlob.size||0});}catch(e){}
-  pdfToast('Stored on Cloudflare · '+receiptNo,true);
-  return j||{ok:true,pathname:pathname,receiptNo:receiptNo,kind:kind,view:view};
- }).catch(function(err){
-  console.warn('Cloud store failed, falling back to local',err);
-  pdfToast('Cloud store failed ('+String(err&&err.message||err)+') after retries — saving locally…',null);
-  return finishLocal();
- });
-}
+function storeReceiptPdf(){ /* Storage removed */ return Promise.resolve({ok:false,removed:true}); }
 function archivePdf(blob,filename,kind,receiptNo,view){
  return storeReceiptPdf(blob,{filename,kind,receiptNo,view});
 }
@@ -2605,52 +2560,9 @@ function makeReceiptPdfBlob(forceView){
   }
  });
 }
-function storeCurrentReceiptToStorage(forceView){
- if(!requireReceiptNo('storing'))return Promise.resolve(null);
- return makeReceiptPdfBlob(forceView).then(r=>{
-  if(state.receipt&&state.receipt.current){state.receipt.printed=true;save(true);}
-  return storeReceiptPdf(r.blob,{filename:r.filename,kind:r.kind,receiptNo:r.receiptNo,view:r.view});
- });
-}
-function storeReceiptViews(receiptNo, kind, renderPdf){
- if(!validReceiptNo(receiptNo)){
-  pdfToast('Not stored — use ARK-YYYY-NNNNNN',false);
-  return Promise.resolve(null);
- }
- let chain=Promise.resolve();
- ['full','one-page'].forEach(function(viewName){
- chain=chain.then(()=>renderPdf(viewName)).then(function(r){
-  if(!r||!r.blob)throw new Error('Could not build '+viewName+' PDF');
-  return storeReceiptPdf(r.blob,{
-   filename:displayPdfName(receiptNo,viewName,kind),
-   kind:kind,
-   receiptNo:receiptNo,
-   view:viewName
-  });
- }).then(function(res){
-  if(!res)throw new Error('Could not store '+viewName+' PDF');
- });
- });
- return chain;
-}
-function storeCurrentReceiptPair(){
- try{snapForm();}catch(e){}
- if(!requireReceiptNo('storing'))return Promise.resolve(null);
- const receiptNo=receiptNoStr(state.receipt&&state.receipt.current);
- const kind=receiptKind();
- if(!receiptNo){pdfToast('Not stored — no ARK- receipt number',false);return Promise.resolve(null);}
- pdfToast('Saving Full + One-page to Storage…',null);
- return storeReceiptViews(receiptNo,kind,viewName=>makeReceiptPdfBlob(viewName)).then(function(){
- if(state.receipt){state.receipt.printed=true;save(true);}
- pdfToast('Saved Full + One-page under '+receiptNo,true);
- try{if(window.__versyRefreshStorageList)window.__versyRefreshStorageList(receiptNo);}catch(e){}
- return true;
- }).catch(function(err){
- console.warn(err);
- pdfToast('Could not save both formats: '+(err&&err.message||err),false);
- return null;
- });
-}
+function storeCurrentReceiptToStorage(){ /* Storage removed */ return Promise.resolve(null); }
+function storeReceiptViews(){ /* Storage removed */ return Promise.resolve(null); }
+function storeCurrentReceiptPair(){ /* Storage removed */ return Promise.resolve(null); }
 function looksLikeReceiptNo(s){
  return /^ARK-\d{4}-\d+/i.test(String(s||'').trim());
 }
@@ -2995,20 +2907,7 @@ function serialFromKeywords(kw){
  }
  return '';
 }
-function ingestPdfFileToStorage(file, fallbackNo){
- const openNo=normalizeReceiptNo(fallbackNo)||normalizeReceiptNo(state.receipt&&state.receipt.current);
- return file.arrayBuffer().then(buf=>{
-  return pdfInspect(buf).then(function(info){
-   const receiptNo=openNo||serialFromKeywords(info.keywords)||normalizeReceiptNo(info.title)||normalizeReceiptNo(file.name);
-   if(!receiptNo){
-    throw new Error('No ARK-YYYY-N serial found in this PDF (Keywords, Title or filename). Open that receipt first, then drop');
-   }
-   const view=info.count===1?'one-page':'full';
-   const blob=new Blob([buf],{type:'application/pdf'});
-   return storeReceiptPdf(blob,{receiptNo,kind:'regular',view,source:'drop'});
-  });
- });
-}
+function ingestPdfFileToStorage(){ /* Storage removed */ return Promise.resolve(null); }
 function handleStorageDrop(dt, fallbackNo, onDone){
  const tasks=[];
  if(dt&&dt.files&&dt.files.length){
@@ -3121,232 +3020,7 @@ function openStoredPdf(file, ev){
  }
  return false;
 }
-function storageTab(){
- const curNo=(state.receipt&&state.receipt.current)||'';
- const mode=storageMode();
- openDlg('Storage 存檔',()=>{
-  const wrap=h('div',{id:'storWrap',style:'display:grid;gap:12px;min-height:160px'});
-  wrap.append(h('p',{class:'hint'},'Drop a receipt PDF here. Files are grouped by receipt number — click a number to see its files.'));
-
-  const quiet=mode==='cloud'
-   ? 'Cloudflare R2 · hold a file line 3s to delete (sold red blink). This browser mirrors offline.'
-   : 'Stored in this browser · hold a file line 3s to delete (sold red blink).';
-  wrap.append(h('p',{class:'stor-quiet',style:'margin:0;font-size:11px;color:var(--muted)'},quiet));
-
-  const drop=h('div',{class:'stor-drop',id:'storDrop'});
-  drop.innerHTML='<div class="stor-drop-inner"><div class="stor-drop-title">⬇ Drop receipt PDF here</div><div class="stor-drop-sub">拖放 PDF 到這裡 · same number → same folder</div></div>';
-
-  const listEl=h('div',{class:'stor-list',id:'storList'});
-  listEl.append(h('p',{class:'hint',style:'margin:0'},'No receipts stored yet.'));
-
-  wrap.append(drop, listEl);
-
-  setTimeout(()=>{
-   const zone=$('#storDrop')||drop;
-   bindStorageDnD(zone, curNo, ()=>refreshStorageList(true));
-   refreshStorageList(false);
-   /* migrate any leftover data: URLs into IndexedDB to free quota */
-   try{
-    const j=readLocalStore();
-    (j.files||[]).forEach(function(f){
-     if(f.url&&String(f.url).indexOf('data:')===0&&f.pathname){
-      fetch(f.url).then(function(r){return r.blob();}).then(function(b){
-       return idbPutPdf(f.pathname,b).then(function(){
-        f.url='idb:'+f.pathname;writeLocalStore(j);
-       });
-      }).catch(function(){});
-     }
-    });
-   }catch(e){}
-  },0);
-
-  window.__versyRefreshStorageList=(expandNo)=>refreshStorageList(true, expandNo);
-
-  function fileLabel(file){
-   const view=file.view||'full', kind=file.kind||'regular';
-   const no=file.receiptNo||'';
-   const name=displayPdfName(no||'receipt', view, kind);
-   const bits=[];
-   if(kind==='paid-in-full') bits.push('Paid in full');
-   bits.push(view==='one-page'?'One-page receipt':'Full receipt');
-   return {name, meta:bits.join(' · ')};
-  }
-  function bindHoldDelete(el, onArmed, titleHint){
-   /* Hold ~3s with sold-red blink (same family as .xhold strikes). Release early cancels. */
-   let timer=null, armed=false;
-   const HOLD_MS=3000;
-   const clear=()=>{
-    if(timer){clearTimeout(timer);timer=null;}
-    el.classList.remove('stor-xhold');
-    armed=false;
-   };
-   const start=(e)=>{
-    if(e.button!=null&&e.button!==0)return;
-    if(e.target&&e.target.closest&&e.target.closest('button.stor-pay-split,a.stor-file-link')){
-     /* allow link/split to work; hold only on the row chrome / meta / empty space — actually hold on whole row except split button */
-    }
-    if(e.target&&e.target.closest&&e.target.closest('button.stor-pay-split'))return;
-    clear();
-    el.classList.add('stor-xhold');
-    el.title=titleHint||'Hold 3s to delete';
-    timer=setTimeout(()=>{
-     timer=null;armed=true;
-     el.classList.remove('stor-xhold');
-     try{onArmed();}catch(err){console.warn(err);}
-    },HOLD_MS);
-   };
-   const end=(e)=>{
-    if(armed){
-     if(e){e.preventDefault();e.stopPropagation();}
-     armed=false;
-     return;
-    }
-    clear();
-   };
-   el.addEventListener('pointerdown',start);
-   el.addEventListener('pointerup',end);
-   el.addEventListener('pointerleave',()=>clear());
-   el.addEventListener('pointercancel',()=>clear());
-   el.addEventListener('click',e=>{
-    if(armed){e.preventDefault();e.stopPropagation();armed=false;}
-   },true);
-  }
-  function renderFiles(kids, files, receiptNo){
-   kids.innerHTML='';
-   if(!files||!files.length){
-    kids.append(h('div',{class:'stor-tree-empty'},'No files'));
-    return;
-   }
-   files.forEach(file=>{
-    const lab=fileLabel(file);
-    const row=h('div',{class:'stor-tree-file'});
-    row.title='Hold 3s to delete · click name to open';
-    const link=h('a',{href:file.url||'#',target:'_blank',rel:'noopener noreferrer',class:'stor-file-link',title:'Open PDF'},lab.name);
-    link.addEventListener('click',e=>openStoredPdf(file,e));
-    row.append(
-     h('span',{class:'stor-tree-branch'},''),
-     link,
-     lab.meta?h('span',{class:'stor-tree-meta'},lab.meta):null
-    );
-    const already=file.kind==='paid-in-full';
-    if(!already){
-     const splitBtn=document.createElement('button');
-     splitBtn.type='button';
-     splitBtn.className='stor-pay-split';
-     splitBtn.title='Change this PDF to the Paid-in-full version (same Full / One-page layout)';
-     splitBtn.textContent='Change to paid';
-     splitBtn.setAttribute('style','margin-left:auto;background:#a53a2a;border:1px solid #a53a2a;color:#fff;font:600 11px system-ui;padding:5px 10px;border-radius:6px;cursor:pointer;white-space:nowrap');
-     splitBtn.addEventListener('click',e=>{
-      e.preventDefault();e.stopPropagation();
-      const rowMeta=findIndexRowByReceiptNo(file.receiptNo);
-      splitBtn.disabled=true;
-      splitBtn.textContent='Creating…';
-      Promise.resolve(splitPayInFullReceipt({
-       receiptNo:file.receiptNo,
-       sourceId:rowMeta&&rowMeta.id,
-       view:(file.view==='one-page'||file.view==='small'||(!file.view&&/^(One-page-receipt|Paid-in-full-one-page)/i.test(String(file.filename||file.name||''))))?'one-page':'full',
-       fromKind:file.kind,
-       file:file,
-       fromStorage:true
-      })).finally(()=>{
-       splitBtn.disabled=false;
-       splitBtn.textContent='Change to paid';
-      });
-     });
-     row.append(splitBtn);
-    }else{
-     const done=document.createElement('span');
-     done.className='stor-pay-done';
-     done.textContent='Paid in full';
-     done.setAttribute('style','margin-left:auto;color:#a53a2a;font:600 11px system-ui');
-     row.append(done);
-    }
-    bindHoldDelete(row, ()=>{
-     deleteStoredPdf(file).then(()=>{
-      const remaining=localFilesFor(file.receiptNo);
-      /* refresh: if zero files, drop the number line */
-      refreshStorageList(true, remaining.length?file.receiptNo:null);
-     });
-    }, 'Hold 3s to delete this PDF');
-    kids.append(row);
-   });
-  }
-  function loadFilesInto(kids, receiptNo){
-   kids.innerHTML='';
-   kids.append(h('div',{class:'stor-tree-empty'},'…'));
-   const local=localFilesFor(receiptNo);
-   const api=listApiUrl();
-   const finish=(remote)=>{
-    const stamped=(remote||[]).map(f=>Object.assign({},f,{receiptNo:f.receiptNo||receiptNo}));
-    const all=[...(local||[]),...stamped];
-    renderFiles(kids, dedupeFilesByFormat(all), receiptNo);
-   };
-   if(!api){finish([]);return;}
-   fetchRetry(listApiUrl(receiptNo)).then(r=>r.json()).then(d=>finish((d&&d.files)||[])).catch(()=>finish([]));
-  }
-  function refreshStorageList(preferExpandLatest, expandReceiptNo){
-   const el=$('#storList');if(!el)return;
-   const api=listApiUrl();
-   const locals=localFolders();
-
-   const paint=(folders)=>{
-    el.innerHTML='';
-    if(!folders.length){
-     el.append(h('p',{class:'hint',style:'margin:0'},'No receipts stored yet.'));
-     return;
-    }
-    let expandNo=expandReceiptNo||null;
-    if(!expandNo&&preferExpandLatest)expandNo=folders[0]&&folders[0].receiptNo;
-    const expandWant=String(expandNo||'').toLowerCase();
-    folders.forEach(f=>{
-     const row=h('div',{class:'stor-tree-row'});
-     const line=h('button',{type:'button',class:'stor-tree-line'},
-      h('span',{class:'stor-folder-icon','aria-hidden':'true'}),
-      h('span',{},(f.receiptNo||'?')+(f.count?(' · '+f.count):''))
-     );
-     line.title='Click to expand · hold 3s to delete all PDFs for this number';
-     const kids=h('div',{class:'stor-tree-kids'});
-     kids.hidden=true;
-     let folderArmed=false;
-     line.addEventListener('click',e=>{
-      if(folderArmed){folderArmed=false;e.preventDefault();e.stopPropagation();return;}
-      const wasOpen=row.classList.contains('open');
-      el.querySelectorAll('.stor-tree-row.open').forEach(r=>{r.classList.remove('open');const k=r.querySelector('.stor-tree-kids');if(k)k.hidden=true;});
-      if(!wasOpen){row.classList.add('open');kids.hidden=false;loadFilesInto(kids, f.receiptNo);}
-     });
-     bindHoldDelete(line, ()=>{
-      folderArmed=true;
-      deleteStoredFolder(f.receiptNo).then(()=>refreshStorageList(false));
-     }, 'Hold 3s to delete all PDFs under '+f.receiptNo);
-     row.append(line, kids);
-     el.append(row);
-     if(expandWant&&String(f.receiptNo||'').toLowerCase()===expandWant){
-      row.classList.add('open');kids.hidden=false;loadFilesInto(kids, f.receiptNo);
-     }
-    });
-   };
-
-   /* always paint locals immediately — never stick on Loading… */
-   if(!api){paint(locals);return;}
-   paint(locals);
-   fetchRetry(api).then(r=>r.json()).then(data=>{
-    const remote=(data&&data.folders)||[];
-    const merged=new Map();
-    locals.forEach(f=>merged.set(String(f.receiptNo).toUpperCase(),{...f}));
-    remote.forEach(f=>{
-     const rno=normalizeReceiptNo(f.receiptNo);
-     if(!rno||isJunkReceiptFolder(rno))return;
-     const cur=merged.get(rno)||{receiptNo:rno,count:0,latest:0};
-     cur.count=Math.max(cur.count||0,f.count||0);
-     cur.latest=Math.max(cur.latest||0,f.latest||0);
-     merged.set(rno,cur);
-    });
-    paint([...merged.values()].sort((a,b)=>(b.latest||0)-(a.latest||0)));
-   }).catch(()=>paint(locals));
-  }
-  return wrap;
- });
-}
+function storageTab(){ /* Storage removed */ }
 function savePdf(){
  if(!requireReceiptNo('creating a PDF'))return;
  if(typeof html2pdf==='undefined'){alert('PDF tool did not load.');return;}
@@ -3357,10 +3031,6 @@ function savePdf(){
   document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   if(state.receipt&&state.receipt.current){state.receipt.printed=true;save(true);}
-  return storeReceiptPdf(r.blob,{filename:r.filename,kind:r.kind,receiptNo:r.receiptNo,view:r.view}).then(res=>{
-   try{if(window.__versyRefreshStorageList)$('#dlg')&&$('#dlg').open&&window.__versyRefreshStorageList();}catch(e){}
-   return res;
-  });
  }).catch(e=>alert('Could not make the PDF: '+e));
 }
 /* ---------- shell and top bar ---------- */
@@ -3401,14 +3071,11 @@ function buildBar(){
    h('button',{onclick:()=>{if(confirm('Clear everything typed into the form?'))renderSheet(true);}},'Clear form'),
    h('button',{onclick:toggleEdit},'✎ Edit'),
    h('button',{onclick:()=>window.print()},'Print'),h('button',{class:'pri',onclick:savePdf,title:'Save a clean PDF with no browser date, title or file path'},'⬇ Save PDF'),
-   h('button',{onclick:storeCurrentReceiptPair,title:'Store both Full and One-page PDFs under this receipt number'},'Save to Storage'),
-   h('button',{onclick:storageTab,title:'Drop and browse PDFs by receipt number'},'Storage'),
    h('button',{title:'Settings, receipt numbers, glossary, backup',onclick:menuDialog},'⋯'));
  }else{
   bar.append(h('span',{class:'ttl'},'Editing'),h('span',{class:'ver'},VERSION),viewSeg(),h('span',{class:'st',id:'st'}),h('span',{class:'sp'}),
    h('button',{onclick:()=>window.print()},'Print'),h('button',{onclick:savePdf},'⬇ Save PDF'),
    h('button',{onclick:changeReceiptNo,title:'Change this receipt number without clearing entered fields (or double-click Receipt No. on the sheet)'},'Change number'),
-   h('button',{onclick:storeCurrentReceiptPair,title:'Store both Full and One-page PDFs under this receipt number'},'Save to Storage'),
    h('button',{onclick:downloadHtml},'Download HTML'),
    h('button',{title:'Settings, receipt numbers, glossary, backup',onclick:menuDialog},'⋯'),
    h('button',{class:'pri',onclick:toggleEdit},'✓ Done'));
@@ -3614,7 +3281,6 @@ function menuDialog(){
  openDlg('Tools',()=>h('div',{class:'menu',style:'display:grid;gap:6px'},
   mi('Settings — website, colours, text size',settingsDialog),
   mi('Default signature — merchant sign on every receipt',signatureDialog),
-  mi('Storage — archived PDFs by receipt number',()=>storageTab(),true),
   mi('One-page receipt — paper size and parts',smallDialog),
   mi('Receipt numbers and log',receiptDialog),
   mi('Glossary — words that auto-translate',glossaryDialog),
@@ -3758,10 +3424,7 @@ if(window.__VERSY_RECEIPT_KIND==='paid-in-full'||(state&&state.kind==='paid-in-f
 if(window.__VERSY_RECEIPT_VIEW==='one-page') view='small';
 else if(window.__VERSY_RECEIPT_VIEW==='full') view='full';
 shell();
-try{
-  const q=new URLSearchParams(location.search);
-  if(q.get('storage')==='1'||location.hash==='#storage'){setTimeout(()=>{try{storageTab();}catch(e){}},200);}
-}catch(e){}
+/* Storage removed */
 })();
 </script>
 <style>
