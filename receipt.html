@@ -2445,18 +2445,7 @@ function makeReceiptPdfBlob(forceView){
   const p0=sh.querySelector('.pb');
   if(p0){const cs=getComputedStyle(sh);if(p0.getBoundingClientRect().top-sh.getBoundingClientRect().top-(parseFloat(cs.paddingTop)||0)<4){pbFirst=p0;p0.classList.remove('pb');}}
  }catch(e){}
- /* html2pdf ignores .pb on a .kg (it is also in avoid) - pad to the next page boundary ourselves */
- const pbPads=[];
- try{
-  const pw=paper==='a5'?148:210,ph=paper==='a5'?210:297,pageH=sh.offsetWidth*ph/pw;
-  sh.querySelectorAll('.pb').forEach(function(el){
-   const top=el.getBoundingClientRect().top-sh.getBoundingClientRect().top,rem=top%pageH;
-   if(rem<2||pageH-rem<2)return;
-   const pad=document.createElement('div');pad.className='pb-pad';pad.style.cssText='display:block;margin:0;padding:0;border:0;height:'+(pageH-rem+1)+'px';
-   el.parentNode.insertBefore(pad,el);pbPads.push(pad);el.classList.remove('pb');el.setAttribute('data-pb','1');
-  });
- }catch(e){}
- const restorePb=function(){if(pbFirst){pbFirst.classList.add('pb');pbFirst=null;}pbPads.splice(0).forEach(function(p){p.remove();});sh.querySelectorAll('[data-pb]').forEach(function(e){e.classList.add('pb');e.removeAttribute('data-pb');});};
+ const restorePb=function(){if(pbFirst){pbFirst.classList.add('pb');pbFirst=null;}};
  /* html2pdf returns a Worker thenable — wrap in a native Promise (avoids n.resolve is not a function) */
  return new Promise(function(resolve, reject){
   try{
@@ -3766,7 +3755,7 @@ function norm(el){if(!el.matches||!el.matches('input[type=text]'))return;var l=(
 document.addEventListener('input',function(e){var el=e.target;if(/^\s*[ab][0-6]\s*$/i.test(el.value||''))norm(el);},false);
 document.addEventListener('blur',function(e){norm(e.target);},true);})();
 </script>
-<style>body.pdfing .sheet{box-shadow:none!important;margin:0!important;min-height:0!important}body.pdfing button.today,body.pdfing .pb-toggle,body.pdfing .addtr{display:none!important}body.pdfing #abPick{display:none}</style>
+<style>body.pdfing .sheet{box-shadow:none!important;margin:0!important;min-height:0!important}body.pdfing button.today,body.pdfing .pb-toggle,body.pdfing .addtr{display:none!important}body.pdfing #abPick{display:none}body.pdfing .pb{display:flow-root}</style>
 <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script>
 </body>
 </html>
