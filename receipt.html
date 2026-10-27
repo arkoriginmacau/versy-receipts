@@ -1505,7 +1505,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.56 · 27.10.26';
+const VERSION='v0.57 · 27.10.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1864,7 +1864,7 @@ function applyPaidKindDefaults(){
  });
 }
 /* typed form values survive redraws (and edit mode) — remembered per field */
-let formStash={};
+let formStash={},skipSnapOnce=false;
 function snapForm(){document.querySelectorAll('#sheet [data-fk]').forEach(e=>{formStash[e.dataset.fk]={c:e.checked,v:e.value};});}
 function restoreForm(){
  document.querySelectorAll('#sheet [data-fk]').forEach(e=>{const x=formStash[e.dataset.fk];if(!x)return;if(e.type==='checkbox')e.checked=!!x.c;else if(!e.readOnly)e.value=x.v;});
@@ -1873,7 +1873,7 @@ function restoreForm(){
 function placeEnd(n){try{const r=document.createRange();r.selectNodeContents(n);r.collapse(false);const s=getSelection();s.removeAllRanges();s.addRange(r);}catch(e){}}
 function renderSheet(forceClear){
  const s=state.settings;
- if(forceClear)formStash={};else snapForm();
+ if(forceClear)formStash={};else if(skipSnapOnce)skipSnapOnce=false;else snapForm();
  theme();
  const ae=document.activeElement;let fp=null;
  if(editing&&ae&&ae.matches&&ae.matches('[contenteditable][data-p]'))fp=[ae.dataset.b,ae.dataset.p];
@@ -1958,7 +1958,7 @@ function stampPayInFullOnCurrent(){
    history.replaceState(null,'',location.pathname+'?'+q.toString()+location.hash);
   }catch(e){}
   try{save(true);}catch(e){}
-  buildBar();renderSheet();window.scrollTo({top:0});
+  skipSnapOnce=true;buildBar();renderSheet();window.scrollTo({top:0});
   return;
  }
  state.prePaid={accent:state.settings&&state.settings.accent,headerRight:state.settings&&state.settings.headerRight,blocks:clone(state.blocks||[]),formStash:clone(formStash)};
@@ -1973,7 +1973,7 @@ function stampPayInFullOnCurrent(){
   history.replaceState(null,'',location.pathname+'?'+q.toString()+location.hash);
  }catch(e){}
  try{save(true);}catch(e){}
- buildBar();renderSheet();window.scrollTo({top:0});
+ skipSnapOnce=true;buildBar();renderSheet();window.scrollTo({top:0});
  storeCurrentReceiptPair();
 }
 function newReceiptBtn(){
@@ -2019,6 +2019,22 @@ function uploadApiUrl(){
  if(b)return b+'/api/upload-receipt';
  if(/\.github\.io$/i.test(location.hostname))return '';
  return '/api/upload-receipt';
+}
+function fetchRetry(url,opts,tries,timeoutMs){
+ tries=tries||3;timeoutMs=timeoutMs||20000;
+ const attempt=function(n){
+  const ctl=typeof AbortController!=='undefined'?new AbortController():null;
+  const t=ctl?setTimeout(function(){ctl.abort();},timeoutMs):null;
+  return fetch(url,Object.assign({},opts||{},ctl?{signal:ctl.signal}:{})).then(function(r){
+   if(t)clearTimeout(t);
+   if(r.status>=500&&n<tries)throw new Error('HTTP '+r.status);
+   return r;
+  },function(e){if(t)clearTimeout(t);throw e;}).catch(function(e){
+   if(n>=tries)throw e;
+   return new Promise(function(res){setTimeout(res,600*Math.pow(2,n-1));}).then(function(){return attempt(n+1);});
+  });
+ };
+ return attempt(1);
 }
 function listApiUrl(receiptNo){
  const b=apiBase();
@@ -2334,7 +2350,7 @@ function storeReceiptPdf(blob, opts){
  }
  pdfToast('Storing on Cloudflare…',null);
  return blobToBase64(pdfBlob).then(function(pdfBase64){
-  return fetch(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({receiptNo:receiptNo,kind:kind,view:view,filename:filename,source:opts.source,pdfBase64:pdfBase64})});
+  return fetchRetry(api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({receiptNo:receiptNo,kind:kind,view:view,filename:filename,source:opts.source,pdfBase64:pdfBase64})});
  }).then(async function(r){
   let j=null;try{j=await r.json();}catch(e){}
   if(!r.ok)throw new Error((j&&j.error)||('HTTP '+r.status));
@@ -2344,16 +2360,21 @@ function storeReceiptPdf(blob, opts){
   return j||{ok:true,pathname:pathname,receiptNo:receiptNo,kind:kind,view:view};
  }).catch(function(err){
   console.warn('Cloud store failed, falling back to local',err);
-  pdfToast('Cloud failed — saving locally…',null);
+  pdfToast('Cloud store failed ('+String(err&&err.message||err)+') after retries — saving locally…',null);
   return finishLocal();
  });
 }
 function archivePdf(blob,filename,kind,receiptNo,view){
  return storeReceiptPdf(blob,{filename,kind,receiptNo,view});
 }
+/* browsers cap canvas height (~16k px): a long Full sheet at 2x gets its tail (QR, photos, Care text) cut off */
+function pdfScale(){
+ try{const sh=$('#sheet');const h=sh?Math.max(sh.scrollHeight,sh.offsetHeight):0;if(h>0)return Math.max(1,Math.min(2,Math.floor(15000/h*100)/100));}catch(e){}
+ return 2;
+}
 function pdfWorkerOpts(paper,filename){
  return {margin:0,filename:filename,image:{type:'jpeg',quality:0.98},
-  html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',ignoreElements:el=>el.id==='abPick'||(el.classList&&(el.classList.contains('sh-head')||el.classList.contains('sh-foot')||el.classList.contains('sm-sync')||el.classList.contains('msig-set')||el.classList.contains('no-print')))},
+  html2canvas:{scale:pdfScale(),useCORS:true,scrollX:0,scrollY:0,windowWidth:document.documentElement.clientWidth,backgroundColor:'#ffffff',ignoreElements:el=>el.id==='abPick'||(el.classList&&(el.classList.contains('sh-head')||el.classList.contains('sh-foot')||el.classList.contains('sm-sync')||el.classList.contains('msig-set')||el.classList.contains('no-print')||el.classList.contains('today')||el.classList.contains('pb-toggle')||el.classList.contains('addtr')))},
   jsPDF:{unit:'mm',format:paper,orientation:'portrait'},pagebreak:{mode:['css','legacy'],before:'.pb',avoid:['.kg','.fl','.fv','.cl>div','.s','h2','h3','.sg']}};
 }
 function makeReceiptPdfBlob(forceView){
@@ -2369,22 +2390,30 @@ function makeReceiptPdfBlob(forceView){
  const vlabel=small?'one-page':'full';
  const filename=displayPdfName(no, vlabel, kind);
  document.body.classList.add('pdfing');
+ /* a .pb on the very first block makes html2pdf emit a blank page 1 */
+ let pbFirst=null;
+ try{
+  window.scrollTo(0,0);
+  const p0=sh.querySelector('.pb');
+  if(p0){const cs=getComputedStyle(sh);if(p0.getBoundingClientRect().top-sh.getBoundingClientRect().top-(parseFloat(cs.paddingTop)||0)<4){pbFirst=p0;p0.classList.remove('pb');}}
+ }catch(e){}
+ const restorePb=function(){if(pbFirst){pbFirst.classList.add('pb');pbFirst=null;}};
  /* html2pdf returns a Worker thenable — wrap in a native Promise (avoids n.resolve is not a function) */
  return new Promise(function(resolve, reject){
   try{
    html2pdf().set(pdfWorkerOpts(paper,filename)).from(sh).outputPdf('blob').then(function(blob){
-    document.body.classList.remove('pdfing');
+    document.body.classList.remove('pdfing');restorePb();
     if(wasEditing){editing=true;}
     if(forceView&&wasView!==view){view=wasView;buildBar();renderSheet();}
     else if(wasEditing){buildBar();renderSheet();}
     resolve({blob:blob,filename:filename,kind:kind,receiptNo:no,view:vlabel});
    }, function(e){
-    document.body.classList.remove('pdfing');
+    document.body.classList.remove('pdfing');restorePb();
     view=wasView;editing=wasEditing;buildBar();renderSheet();
     reject(e);
    });
   }catch(e){
-   document.body.classList.remove('pdfing');
+   document.body.classList.remove('pdfing');restorePb();
    view=wasView;editing=wasEditing;try{buildBar();renderSheet();}catch(err){}
    reject(e);
   }
@@ -2717,7 +2746,7 @@ function renderPaidPdfFromState(paidState, forceView){
   try{applyPaidKindDefaults();}catch(e){}
   try{ensureSmall();}catch(e){}
   buildBar();
-  renderSheet();
+  skipSnapOnce=true;renderSheet();
   return makeReceiptPdfBlob(view==='small'?'one-page':'full').then(function(r){
    restore();
    return r;
@@ -3066,7 +3095,7 @@ function storageTab(){
     renderFiles(kids, dedupeFilesByFormat(all), receiptNo);
    };
    if(!api){finish([]);return;}
-   fetch(listApiUrl(receiptNo)).then(r=>r.json()).then(d=>finish((d&&d.files)||[])).catch(()=>finish([]));
+   fetchRetry(listApiUrl(receiptNo)).then(r=>r.json()).then(d=>finish((d&&d.files)||[])).catch(()=>finish([]));
   }
   function refreshStorageList(preferExpandLatest, expandReceiptNo){
    const el=$('#storList');if(!el)return;
@@ -3113,7 +3142,7 @@ function storageTab(){
    /* always paint locals immediately — never stick on Loading… */
    if(!api){paint(locals);return;}
    paint(locals);
-   fetch(api).then(r=>r.json()).then(data=>{
+   fetchRetry(api).then(r=>r.json()).then(data=>{
     const remote=(data&&data.folders)||[];
     const merged=new Map();
     locals.forEach(f=>merged.set(String(f.receiptNo).toUpperCase(),{...f}));
@@ -3121,7 +3150,7 @@ function storageTab(){
      const rno=normalizeReceiptNo(f.receiptNo);
      if(!rno||isJunkReceiptFolder(rno))return;
      const cur=merged.get(rno)||{receiptNo:rno,count:0,latest:0};
-     cur.count=(cur.count||0)+(f.count||0);
+     cur.count=Math.max(cur.count||0,f.count||0);
      cur.latest=Math.max(cur.latest||0,f.latest||0);
      merged.set(rno,cur);
     });
@@ -3670,7 +3699,7 @@ function norm(el){if(!el.matches||!el.matches('input[type=text]'))return;var l=(
 document.addEventListener('input',function(e){var el=e.target;if(/^\s*[ab][0-6]\s*$/i.test(el.value||''))norm(el);},false);
 document.addEventListener('blur',function(e){norm(e.target);},true);})();
 </script>
-<style>body.pdfing .sheet{box-shadow:none!important;margin:0!important}body.pdfing #abPick{display:none}</style>
+<style>body.pdfing .sheet{box-shadow:none!important;margin:0!important;min-height:0!important}body.pdfing button.today,body.pdfing .pb-toggle,body.pdfing .addtr{display:none!important}body.pdfing #abPick{display:none}</style>
 <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script>
 </body>
 </html>
