@@ -1507,7 +1507,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.61 · 27.10.26';
+const VERSION='v0.62 · 27.10.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -2445,7 +2445,18 @@ function makeReceiptPdfBlob(forceView){
   const p0=sh.querySelector('.pb');
   if(p0){const cs=getComputedStyle(sh);if(p0.getBoundingClientRect().top-sh.getBoundingClientRect().top-(parseFloat(cs.paddingTop)||0)<4){pbFirst=p0;p0.classList.remove('pb');}}
  }catch(e){}
- const restorePb=function(){if(pbFirst){pbFirst.classList.add('pb');pbFirst=null;}};
+ /* html2pdf ignores .pb on a .kg (it is also in avoid) - pad to the next page boundary ourselves */
+ const pbPads=[];
+ try{
+  const pw=paper==='a5'?148:210,ph=paper==='a5'?210:297,pageH=sh.offsetWidth*ph/pw;
+  sh.querySelectorAll('.pb').forEach(function(el){
+   const top=el.getBoundingClientRect().top-sh.getBoundingClientRect().top,rem=top%pageH;
+   if(rem<2||pageH-rem<2)return;
+   const pad=document.createElement('div');pad.className='pb-pad';pad.style.cssText='display:block;margin:0;padding:0;border:0;height:'+(pageH-rem+1)+'px';
+   el.parentNode.insertBefore(pad,el);pbPads.push(pad);el.classList.remove('pb');el.setAttribute('data-pb','1');
+  });
+ }catch(e){}
+ const restorePb=function(){if(pbFirst){pbFirst.classList.add('pb');pbFirst=null;}pbPads.splice(0).forEach(function(p){p.remove();});sh.querySelectorAll('[data-pb]').forEach(function(e){e.classList.add('pb');e.removeAttribute('data-pb');});};
  /* html2pdf returns a Worker thenable — wrap in a native Promise (avoids n.resolve is not a function) */
  return new Promise(function(resolve, reject){
   try{
