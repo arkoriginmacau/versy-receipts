@@ -136,6 +136,7 @@ label.f{display:grid;gap:3px;font-size:11px;color:var(--muted)}
 .pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .cbx{font-size:12px;display:flex;gap:6px;align-items:center;color:#111}
 .fv input.rno{font-weight:700;color:var(--navy);font-size:8pt;letter-spacing:0;min-width:0;max-width:100%;cursor:default}
+body.editing .fv input.rno{cursor:text}
 .sg .ln{display:flex;align-items:flex-end}
 .sg .ln .dt{width:100%;border:0;background:transparent;font:inherit;padding:0 0 3px;outline:none;text-align:center;color:#111}
 .sg .lb.dl{display:flex;justify-content:space-between;align-items:center;gap:8px}
@@ -1507,7 +1508,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.61 · 27.10.26';
+const VERSION='v0.62 · 27.10.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1614,7 +1615,7 @@ const MODE_SYM={'':'○',blank:'▁',auto:'⇄'},MODE_TIP={'':'Nothing typed aft
 function val(r,b,i){
  const k=r.kind||'text',a=esc((r.en||'')+' '+(r.zh||'')).trim();
  if(k==='static')return editing?`<span${A(b,`rows.${i}.value`,'Fixed text')}>${esc(r.value)}</span>`:esc(r.value);
- if(k==='receiptno')return `<input type="text" class="rno" readonly value="${esc((state.receipt&&state.receipt.current)||'')}" placeholder="Issued automatically" aria-label="Receipt No.">`;
+ if(k==='receiptno')return `<input type="text" class="rno" data-rno="1"${editing?' title="Click to edit the receipt number, then press Enter"':' readonly'} value="${esc((state.receipt&&state.receipt.current)||'')}" placeholder="Issued automatically" aria-label="Receipt No.">`;
  if(k==='date')return `<div class="dtw" data-dt><input type="text" class="dt" data-fk="${b.id}:${i}" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="yyyy-mm-dd" aria-label="${a}"><button type="button" class="today">Today</button></div>`;
  if(k==='area')return `<textarea rows="3" data-fk="${b.id}:${i}" aria-label="${a}"></textarea>`;
  if(k==='checks'){
@@ -1843,34 +1844,49 @@ function requireReceiptNo(action){
  alert('Use a receipt number in ARK-YYYY-NNNNNN format before '+action+'.');
  return false;
 }
-function changeReceiptNo(){
+function applyReceiptNo(value){
  const receipt=state.receipt||{};
  const current=receiptNoStr(receipt.current);
- const value=prompt('Enter the new receipt number (ARK-YYYY-NNNNNN):',current);
- if(value==null)return;
- const next=String(value).trim().toUpperCase();
+ const next=String(value==null?'':value).trim().toUpperCase();
  if(!validReceiptNo(next)){
   alert('Invalid receipt number. Use ARK-YYYY-NNNNNN, for example ARK-2026-123456.');
-  return;
+  return false;
  }
- if(next===current.toUpperCase())return;
+ if(next===current.toUpperCase())return false;
  if((receipt.log||[]).some(entry=>String(entry.no||'').toUpperCase()===next)){
   alert('That receipt number has already been issued.');
-  return;
+  return false;
  }
  const indexed=findIndexRowByReceiptNo(next);
  if(indexed&&indexed.id!==window.__VERSY_RECEIPT_ID){
   alert('That receipt number is already used by another receipt.');
-  return;
+  return false;
  }
  const row=(receipt.log||[]).find(entry=>String(entry.no||'').toUpperCase()===current.toUpperCase());
  if(row)row.no=next;
- else receipt.log.unshift({no:next,date:todayISO(),void:false,note:''});
+ else{if(!receipt.log)receipt.log=[];receipt.log.unshift({no:next,date:todayISO(),void:false,note:''});}
  receipt.current=next;
  save(true);
  buildBar();
  renderSheet();
+ return true;
 }
+function changeReceiptNo(){
+ const value=prompt('Enter the new receipt number (ARK-YYYY-NNNNNN):',receiptNoStr((state.receipt||{}).current));
+ if(value==null)return;
+ applyReceiptNo(value);
+}
+document.addEventListener('change',e=>{
+ const t=e.target;
+ if(!editing||!t||!t.matches||!t.matches('input.rno[data-rno]'))return;
+ if(!applyReceiptNo(t.value))t.value=receiptNoStr((state.receipt||{}).current);
+});
+document.addEventListener('keydown',e=>{
+ const t=e.target;
+ if(!editing||!t||!t.matches||!t.matches('input.rno[data-rno]'))return;
+ if(e.key==='Enter'){e.preventDefault();t.blur();}
+ else if(e.key==='Escape'){t.value=receiptNoStr((state.receipt||{}).current);t.blur();}
+});
 function applyPaidKindDefaults(){
  if(!isPaidKind())return;
  state.kind='paid-in-full';
@@ -3274,7 +3290,7 @@ function buildBar(){
  }else{
   bar.append(h('span',{class:'ttl'},'Editing'),h('span',{class:'ver'},VERSION),viewSeg(),h('span',{class:'st',id:'st'}),h('span',{class:'sp'}),
    h('button',{onclick:()=>window.print()},'Print'),h('button',{onclick:savePdf},'⬇ Save PDF'),
-   h('button',{onclick:changeReceiptNo,title:'Change this receipt number without clearing entered fields'},'Change number'),
+   h('button',{onclick:changeReceiptNo,title:'Change this receipt number via a prompt (or just click the Receipt No. on the sheet)'},'Change number'),
    h('button',{onclick:storeCurrentReceiptPair,title:'Store both Full and One-page PDFs under this receipt number'},'Save to Storage'),
    h('button',{onclick:downloadHtml},'Download HTML'),
    h('button',{title:'Settings, receipt numbers, glossary, backup',onclick:menuDialog},'⋯'),
