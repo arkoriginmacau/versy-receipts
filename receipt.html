@@ -180,7 +180,8 @@ body:not(.editing) .blk.struck::after{content:"";position:absolute;left:-4px;rig
 .editing .pb-toggle:hover{background:transparent;color:#1f5f9e}
 .editing .pb-toggle:hover::before,.editing .pb-toggle:hover::after{border-top:2px solid #2878c7}
 .editing .blk[data-strike]::after{content:"✕ red strike-through when its box is ticked";position:absolute;top:-13px;left:0;font-size:9px;color:#d4001a}
-.editing .sheet input,.editing .sheet textarea,.editing button.today{pointer-events:none}
+.editing .sheet input:not(.rno),.editing .sheet textarea,.editing button.today{pointer-events:none}
+.editing .sheet input.rno{pointer-events:auto;cursor:text}
 .editing [contenteditable]{cursor:text;border-radius:2px;box-shadow:inset 0 -1px 0 rgba(155,35,53,.28);outline:none}
 .editing [contenteditable]:hover{background:rgba(155,35,53,.07)}
 .editing [contenteditable]:focus{background:#fffbe6;box-shadow:0 0 0 1.5px var(--accent)}
@@ -1507,7 +1508,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.64 · 27.10.26';
+const VERSION='v0.65 · 27.10.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1989,7 +1990,11 @@ function commitReceiptNoInput(el){
  if(!ok)el.value=prev;
 }
 document.addEventListener('dblclick',e=>{
- const el=e.target&&e.target.closest&&e.target.closest('input.rno');
+ let el=e.target&&e.target.closest&&e.target.closest('input.rno');
+ if(!el&&e.target&&e.target.closest){
+  const cell=e.target.closest('.fv,.fields td,td,th,.row');
+  if(cell)el=cell.querySelector&&cell.querySelector('input.rno');
+ }
  if(!el)return;
  e.preventDefault();
  unlockReceiptNoInput(el);
