@@ -1505,7 +1505,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.55 · 26.10.26';
+const VERSION='v0.56 · 27.10.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1974,6 +1974,7 @@ function stampPayInFullOnCurrent(){
  }catch(e){}
  try{save(true);}catch(e){}
  buildBar();renderSheet();window.scrollTo({top:0});
+ storeCurrentReceiptPair();
 }
 function newReceiptBtn(){
  return h('button',{
@@ -2395,6 +2396,40 @@ function storeCurrentReceiptToStorage(forceView){
   return storeReceiptPdf(r.blob,{filename:r.filename,kind:r.kind,receiptNo:r.receiptNo,view:r.view});
  });
 }
+function storeReceiptViews(receiptNo, kind, renderPdf){
+ let chain=Promise.resolve();
+ ['full','one-page'].forEach(function(viewName){
+ chain=chain.then(()=>renderPdf(viewName)).then(function(r){
+  if(!r||!r.blob)throw new Error('Could not build '+viewName+' PDF');
+  return storeReceiptPdf(r.blob,{
+   filename:displayPdfName(receiptNo,viewName,kind),
+   kind:kind,
+   receiptNo:receiptNo,
+   view:viewName
+  });
+ }).then(function(res){
+  if(!res)throw new Error('Could not store '+viewName+' PDF');
+ });
+ });
+ return chain;
+}
+function storeCurrentReceiptPair(){
+ try{snapForm();}catch(e){}
+ const receiptNo=receiptNoStr(state.receipt&&state.receipt.current);
+ const kind=receiptKind();
+ if(!receiptNo){pdfToast('Not stored — no ARK- receipt number',false);return Promise.resolve(null);}
+ pdfToast('Saving Full + One-page to Storage…',null);
+ return storeReceiptViews(receiptNo,kind,viewName=>makeReceiptPdfBlob(viewName)).then(function(){
+ if(state.receipt){state.receipt.printed=true;save(true);}
+ pdfToast('Saved Full + One-page under '+receiptNo,true);
+ try{if(window.__versyRefreshStorageList)window.__versyRefreshStorageList(receiptNo);}catch(e){}
+ return true;
+ }).catch(function(err){
+ console.warn(err);
+ pdfToast('Could not save both formats: '+(err&&err.message||err),false);
+ return null;
+ });
+}
 function looksLikeReceiptNo(s){
  return /^ARK-\d{4}-\d+/i.test(String(s||'').trim());
 }
@@ -2641,20 +2676,11 @@ function splitPayInFullReceipt(opts){
  const wantView=(opts.view==='one-page'||opts.view==='small')?'one-page':(opts.view==='full'?'full':(view==='small'?'one-page':'full'));
 
  if(fromStorage){
-  pdfToast('Creating Paid-in-full PDF…',null);
-  return renderPaidPdfFromState(copy, wantView).then(r=>{
-   if(!r||!r.blob)throw new Error('PDF failed');
-   return storeReceiptPdf(r.blob,{
-    filename:displayPdfName(serial,'full'===wantView?'full':wantView,'paid-in-full'),
-    kind:'paid-in-full',
-    view:wantView,
-    receiptNo:serial
-   });
-  }).then((res)=>{
-   if(!res){pdfToast('Paid-in-full store did not save',false);return;}
+  pdfToast('Creating both Paid-in-full PDFs…',null);
+  return storeReceiptViews(serial,'paid-in-full',viewName=>renderPaidPdfFromState(copy,viewName)).then(()=>{
    const n=localFilesFor(serial).filter(f=>f.kind==='paid-in-full').length;
    if(!n){pdfToast('Saved toast but file missing — storage may be full',false);}
-   else pdfToast('Paid-in-full PDF added under '+serial+' ('+n+')',true);
+   else pdfToast('Paid-in-full Full + One-page saved under '+serial+' ('+n+')',true);
    try{if(window.__versyRefreshStorageList)window.__versyRefreshStorageList(serial);}catch(e){}
   }).catch(err=>{
    console.warn(err);
@@ -3158,11 +3184,13 @@ function buildBar(){
    h('button',{onclick:()=>{if(confirm('Clear everything typed into the form?'))renderSheet(true);}},'Clear form'),
    h('button',{onclick:toggleEdit},'✎ Edit'),
    h('button',{onclick:()=>window.print()},'Print'),h('button',{class:'pri',onclick:savePdf,title:'Save a clean PDF with no browser date, title or file path'},'⬇ Save PDF'),
+   h('button',{onclick:storeCurrentReceiptPair,title:'Store both Full and One-page PDFs under this receipt number'},'Save to Storage'),
    h('button',{onclick:storageTab,title:'Drop and browse PDFs by receipt number'},'Storage'),
    h('button',{title:'Settings, receipt numbers, glossary, backup',onclick:menuDialog},'⋯'));
  }else{
   bar.append(h('span',{class:'ttl'},'Editing'),h('span',{class:'ver'},VERSION),viewSeg(),h('span',{class:'st',id:'st'}),h('span',{class:'sp'}),
    h('button',{onclick:()=>window.print()},'Print'),h('button',{onclick:savePdf},'⬇ Save PDF'),
+   h('button',{onclick:storeCurrentReceiptPair,title:'Store both Full and One-page PDFs under this receipt number'},'Save to Storage'),
    h('button',{onclick:downloadHtml},'Download HTML'),
    h('button',{title:'Settings, receipt numbers, glossary, backup',onclick:menuDialog},'⋯'),
    h('button',{class:'pri',onclick:toggleEdit},'✓ Done'));
