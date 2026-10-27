@@ -148,13 +148,14 @@ body:not(.editing) .blk.struck::after{content:"";position:absolute;left:-4px;rig
 .usage button{font-size:11px;padding:3px 9px;border-radius:12px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .usage .ty{color:var(--accent);font-weight:600}.usage .x{color:var(--muted)}
 .hint{font-size:11px;color:var(--muted);margin:0 0 10px}
+.pb-toggle{display:none}
 @media print{
  body{background:#fff}
  .invalid-receipt-number #app{display:none!important}
  .bar,.sh-head,.sh-foot,dialog{overflow:auto;display:none!important}
  .sheet{box-shadow:none;margin:0;padding:0;width:auto;min-height:0}
  .kg{break-inside:avoid}.blk.pb{break-before:page}.blocks>.blk.pb:first-child,.blocks>.kg:first-child>.blk.pb:first-child{break-before:auto}
- .pb-toggle{display:none}
+ .pb-toggle{display:none!important}
  .blk.hid{display:none}
  .addtr{display:none}
  button.today{display:none}
