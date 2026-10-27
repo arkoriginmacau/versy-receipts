@@ -1507,7 +1507,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.61 · 27.10.26';
+const VERSION='v0.62 · 27.10.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1646,17 +1646,112 @@ function translate(v){
 
 /* ---------- default merchant signature (all receipt kinds) ---------- */
 const SIG_KEY='versy-merchant-sig';
+const SIG_IDB_NAME='versy-merchant-sig-v1', SIG_IDB_STORE='sig';
 const DEFAULT_SIG_SVG=`data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="280" height="70" viewBox="0 0 280 70"><text x="8" y="48" font-family="Segoe Script,Brush Script MT,cursive" font-size="28" fill="#1F2A44">Arkorigin</text><text x="8" y="64" font-family="Microsoft JhengHei,sans-serif" font-size="11" fill="#5F6673">鳳仙</text></svg>')}`;
+let merchantSigMem=null;
+function sigIdbOpen(){
+ return new Promise((resolve,reject)=>{
+  try{
+   const req=indexedDB.open(SIG_IDB_NAME,1);
+   req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(SIG_IDB_STORE))db.createObjectStore(SIG_IDB_STORE);};
+   req.onsuccess=()=>resolve(req.result);
+   req.onerror=()=>reject(req.error||new Error('sig idb open'));
+  }catch(e){reject(e);}
+ });
+}
+function sigIdbPut(dataUrl){
+ return sigIdbOpen().then(db=>new Promise((resolve,reject)=>{
+  try{
+   const tx=db.transaction(SIG_IDB_STORE,'readwrite');
+   if(dataUrl)tx.objectStore(SIG_IDB_STORE).put(String(dataUrl),'default');
+   else tx.objectStore(SIG_IDB_STORE).delete('default');
+   tx.oncomplete=()=>resolve();
+   tx.onerror=()=>reject(tx.error||new Error('sig idb put'));
+  }catch(e){reject(e);}
+ }));
+}
+function sigIdbGet(){
+ return sigIdbOpen().then(db=>new Promise((resolve,reject)=>{
+  try{
+   const tx=db.transaction(SIG_IDB_STORE,'readonly');
+   const req=tx.objectStore(SIG_IDB_STORE).get('default');
+   req.onsuccess=()=>resolve(req.result||'');
+   req.onerror=()=>reject(req.error||new Error('sig idb get'));
+  }catch(e){reject(e);}
+ }));
+}
+function compressSigDataUrl(dataUrl){
+ return new Promise(resolve=>{
+  try{
+   if(!dataUrl||typeof dataUrl!=='string'){resolve('');return;}
+   if(dataUrl.indexOf('image/svg')!==-1){resolve(dataUrl);return;}
+   const img=new Image();
+   img.onload=()=>{
+    try{
+     const maxW=560,maxH=160;
+     let w=img.naturalWidth||img.width||maxW,h=img.naturalHeight||img.height||maxH;
+     const sc=Math.min(1,maxW/Math.max(1,w),maxH/Math.max(1,h));
+     w=Math.max(1,Math.round(w*sc));h=Math.max(1,Math.round(h*sc));
+     const c=document.createElement('canvas');c.width=w;c.height=h;
+     const cx=c.getContext('2d');cx.fillStyle='#fff';cx.fillRect(0,0,w,h);cx.drawImage(img,0,0,w,h);
+     let out='';
+     try{out=c.toDataURL('image/jpeg',0.82);}catch(e){out='';}
+     if(!out||out.length>dataUrl.length){try{out=c.toDataURL('image/png');}catch(e2){out=dataUrl;}}
+     resolve(out||dataUrl);
+    }catch(e){resolve(dataUrl);}
+   };
+   img.onerror=()=>resolve(dataUrl);
+   img.src=dataUrl;
+  }catch(e){resolve(dataUrl||'');}
+ });
+}
 function getMerchantSig(){
- try{const s=localStorage.getItem(SIG_KEY);if(s)return s;}catch(e){}
- if(state&&state.settings&&state.settings.merchantSig)return state.settings.merchantSig;
+ if(merchantSigMem)return merchantSigMem;
+ try{const s=localStorage.getItem(SIG_KEY);if(s){merchantSigMem=s;return s;}}catch(e){}
+ if(state&&state.settings&&state.settings.merchantSig){merchantSigMem=state.settings.merchantSig;return merchantSigMem;}
  return DEFAULT_SIG_SVG;
 }
-function setMerchantSig(dataUrl){
+function persistMerchantSigSync(dataUrl){
  if(state&&state.settings)state.settings.merchantSig=dataUrl||'';
- try{if(dataUrl)localStorage.setItem(SIG_KEY,dataUrl);else localStorage.removeItem(SIG_KEY);}catch(e){}
- save(true);renderSheet();
+ let lsOk=false;
+ try{
+  if(dataUrl){localStorage.setItem(SIG_KEY,dataUrl);lsOk=true;}
+  else{localStorage.removeItem(SIG_KEY);lsOk=true;}
+ }catch(e){lsOk=false;}
+ return lsOk;
 }
+function setMerchantSig(dataUrl){
+ const raw=dataUrl||'';
+ const apply=finalUrl=>{
+  merchantSigMem=finalUrl||null;
+  const lsOk=persistMerchantSigSync(finalUrl);
+  save(true);renderSheet();
+  Promise.resolve(sigIdbPut(finalUrl||'')).catch(()=>{});
+  if(finalUrl&&!lsOk){
+   /* IndexedDB still holds it; warn only if both fail later on hydrate */
+  }
+ };
+ if(!raw){apply('');return;}
+ compressSigDataUrl(raw).then(apply).catch(()=>apply(raw));
+}
+function hydrateMerchantSig(){
+ const fromLs=(()=>{try{return localStorage.getItem(SIG_KEY)||'';}catch(e){return '';}})();
+ const fromState=(state&&state.settings&&state.settings.merchantSig)||'';
+ const boot=fromLs||fromState||'';
+ if(boot){merchantSigMem=boot;if(!fromLs)persistMerchantSigSync(boot);}
+ sigIdbGet().then(v=>{
+  const idb=v||'';
+  if(idb&&idb!==merchantSigMem){
+   merchantSigMem=idb;
+   persistMerchantSigSync(idb);
+   try{save(true);}catch(e){}
+   try{renderSheet();}catch(e){}
+  }else if(!idb&&boot){
+   Promise.resolve(sigIdbPut(boot)).catch(()=>{});
+  }
+ }).catch(()=>{});
+}
+hydrateMerchantSig();
 function merchantSigHtml(extraClass){
  const src=getMerchantSig();
  return `<div class="msig ${extraClass||''}"><img class="msig-img" src="${src.replace(/"/g,'&quot;')}" alt="Merchant signature"><button type="button" class="msig-set no-print" data-act="set-sig" title="Change default signature">✎</button></div>`;
@@ -1682,7 +1777,7 @@ function signatureDialog(){
  file.addEventListener('change',()=>{const f=file.files&&file.files[0];file.value='';if(!f)return;const r=new FileReader();r.onload=()=>{pending=String(r.result||'');showPrev();};r.readAsDataURL(f);});
  showPrev();
  return openDlg('Default signature 預設簽名',()=>h('div',{style:'display:grid;gap:12px'},
-  h('p',{class:'hint'},'Set once — used on every receipt (full, one-page, paid-in-full), new or cloned, in Print and Save PDF. Draw or upload, then Save.'),
+  h('p',{class:'hint'},'Set once — permanent on this browser (survives refresh). Used on every receipt (full, one-page, paid-in-full), new or cloned, in Print and Save PDF. Draw or upload, then Save.'),
   cv,
   h('div',{style:'background:#fafbfc;border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center'},prev),
   file,
