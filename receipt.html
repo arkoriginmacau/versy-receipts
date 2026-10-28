@@ -3551,7 +3551,7 @@ function norm(el){if(!el.matches||!el.matches('input[type=text]'))return;var l=(
 document.addEventListener('input',function(e){var el=e.target;if(/^\s*[ab][0-6]\s*$/i.test(el.value||''))norm(el);},false);
 document.addEventListener('blur',function(e){norm(e.target);},true);})();
 </script>
-<style>body.pdfing .sheet{box-shadow:none!important;margin:0!important;min-height:0!important}body.pdfing button.today,body.pdfing .pb-toggle,body.pdfing .addtr{display:none!important}body.pdfing #abPick{display:none}body.pdfing .pb{display:flow-root}</style>
+<style>body.pdfing .sheet{box-shadow:none!important;margin:0!important;min-height:0!important}body.pdfing button.today,body.pdfing .pb-toggle,body.pdfing .addtr{display:none!important}body.pdfing #abPick{display:none}body.pdfing .pb{display:flow-root}body.pdfing .sh-head,body.pdfing .sh-foot,body.pdfing .sm-sync,body.pdfing .msig-set,body.pdfing .no-print{display:none!important}</style>
 <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script>
 </body>
 </html>
