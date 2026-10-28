@@ -41,14 +41,19 @@ a.tile .d{margin-top:4px;font-size:13px;color:var(--muted);line-height:1.4}
       <div class="t">Paid in full · 已全額支付</div>
       <div class="d">Settlement receipt — same layout, final-payment body</div>
     </a>
+    <a class="tile" id="storBtn" href="#">
+      <div class="t">Storage · 存檔</div>
+      <div class="d">Drop and browse PDFs by receipt number</div>
+    </a>
   </div>
-  <p class="ver">Host 0.3 · template v0.66 · 27.10.26</p>
+  <p class="ver">Host 0.3 · template v0.67 · 28.10.26</p>
 </main>
 <script>
 (function(){
   function nid(){return 'r-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);}
   document.getElementById('newBtn').href='receipt.html?id='+encodeURIComponent(nid());
   document.getElementById('paidBtn').href='receipt.html?id='+encodeURIComponent(nid())+'&kind=paid-in-full';
+  document.getElementById('storBtn').href='receipt.html?id='+encodeURIComponent(nid())+'&storage=1';
 })();
 </script>
 </body>
