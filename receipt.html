@@ -1508,7 +1508,7 @@ return req('index');})();</script>
 <script>
 (function(){
 'use strict';
-const VERSION='v0.68 · 28.10.26';
+const VERSION='v0.69 · 04.11.26';
 const KEY='arkorigin-receipt-v1:'+ (window.__VERSY_RECEIPT_ID||'default');
 const $=(s,r=document)=>r.querySelector(s);
 let W='',D='';
@@ -1941,13 +1941,14 @@ function requireReceiptNo(action){
  alert('Use a receipt number in ARK-YYYY-NNNNNN format before '+action+'.');
  return false;
 }
+/* Sheet number only. Any non-empty value commits; Storage files are not read, required, or renamed. */
 function applyReceiptNo(value){
  const receipt=state.receipt||(state.receipt={});
  if(!Array.isArray(receipt.log))receipt.log=[];
  const current=receiptNoStr(receipt.current);
  const next=String(value==null?'':value).trim().toUpperCase();
- if(!validReceiptNo(next)){
-  alert('Invalid receipt number. Use ARK-YYYY-NNNNNN, for example ARK-2026-123456.');
+ if(!next){
+  alert('Enter a receipt number.');
   return false;
  }
  if(next===current.toUpperCase())return true;
@@ -1971,7 +1972,7 @@ function applyReceiptNo(value){
 }
 function changeReceiptNo(){
  const current=receiptNoStr(state.receipt&&state.receipt.current);
- const value=prompt('Enter the new receipt number (ARK-YYYY-NNNNNN):',current);
+ const value=prompt('Enter the new receipt number:',current);
  if(value==null)return;
  applyReceiptNo(value);
 }
